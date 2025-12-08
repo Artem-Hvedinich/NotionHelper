@@ -80,7 +80,7 @@ export function formatRoutineStats(
   additionalStats?: Array<{ name: string; value: string }>
 ): string {
   const progressBar = formatProgressBar(completed, total);
-  let stats = `📊 *Прогресс*: ${completed}/${total} (${progressBar})`;
+  let stats = `📊 *Прогресс*: ${completed}/${total} ${progressBar}`;
   
   if (score !== undefined && score !== null) {
     stats += `\n⭐ *Оценка*: ${score}`;
