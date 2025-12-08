@@ -125,7 +125,7 @@ export class CommandHandlers {
       const pendingTasks = tasks.filter(task => !status[task.propertyName]);
       
       // Формируем сообщение с улучшенным форматированием
-      let message = createHeader('Утренняя рутина', '🌅', 25);
+      let message = createHeader('Утренняя рутина', '🌅', 20);
       message += '\n';
       
       // Статистика
