@@ -94,12 +94,22 @@ export class KeyboardService {
   async getDayRoutineStatusesKeyboard() {
     const statuses = await getDayRoutineStatuses();
     
-    const buttons = statuses.map((status: string) => 
-      Markup.button.callback(status, `day_status:${status}`)
-    );
+    // Маппинг статусов на эмодзи для визуального улучшения
+    const statusEmojiMap: Record<string, string> = {
+      'В работе': '🔄',
+      'Готово': '✅',
+      'Отложено': '⏸️',
+      'В ожидании': '⏳',
+      'YouTube': '📺',
+    };
     
-    // Добавляем кнопку "Добавить задачу"
-    buttons.push(Markup.button.callback('➕ Добавить задачу', 'day_add_task'));
+    const buttons = statuses.map((status: string) => {
+      const emoji = statusEmojiMap[status] || '📋';
+      return Markup.button.callback(`${emoji} ${status}`, `day_status:${status}`);
+    });
+    
+    // Добавляем кнопку "Добавить задачу" с более коротким текстом
+    buttons.push(Markup.button.callback('➕ Добавить', 'day_add_task'));
 
     return Markup.inlineKeyboard(buttons, { columns: 2 });
   }
@@ -110,12 +120,22 @@ export class KeyboardService {
   async getLaterTasksStatusesKeyboard() {
     const statuses = await getLaterTasksStatuses();
     
-    const buttons = statuses.map((status: string) => 
-      Markup.button.callback(status, `later_status:${status}`)
-    );
+    // Маппинг статусов на эмодзи для визуального улучшения
+    const statusEmojiMap: Record<string, string> = {
+      'В работе': '🔄',
+      'Готово': '✅',
+      'Отложено': '⏸️',
+      'В ожидании': '⏳',
+      'YouTube': '📺',
+    };
     
-    // Добавляем кнопку "Добавить задачу"
-    buttons.push(Markup.button.callback('➕ Добавить задачу', 'later_add_task'));
+    const buttons = statuses.map((status: string) => {
+      const emoji = statusEmojiMap[status] || '📋';
+      return Markup.button.callback(`${emoji} ${status}`, `later_status:${status}`);
+    });
+    
+    // Добавляем кнопку "Добавить задачу" с более коротким текстом
+    buttons.push(Markup.button.callback('➕ Добавить', 'later_add_task'));
 
     return Markup.inlineKeyboard(buttons, { columns: 2 });
   }
