@@ -28,6 +28,9 @@ class UserStateService {
   // Хранилище ID сообщения с главным меню (чтобы не удалять его при очистке)
   private userMainMenuMessage = new Map<number, number>(); // userId -> messageId
 
+  // Хранилище ID сообщений пользователя для каждого пользователя (для удаления при очистке)
+  private userUserMessages = new Map<number, number[]>(); // userId -> messageId[]
+
   /**
    * Устанавливает выбранную базу данных для пользователя.
    */
@@ -153,6 +156,32 @@ class UserStateService {
    */
   getMainMenuMessage(userId: number): number | null {
     return this.userMainMenuMessage.get(userId) || null;
+  }
+
+  /**
+   * Сохраняет ID сообщения пользователя для последующего удаления.
+   */
+  trackUserMessage(userId: number, messageId: number): void {
+    const currentMessages = this.userUserMessages.get(userId) || [];
+    // Избегаем дубликатов
+    if (!currentMessages.includes(messageId)) {
+      currentMessages.push(messageId);
+      this.userUserMessages.set(userId, currentMessages);
+    }
+  }
+
+  /**
+   * Получает список ID сообщений пользователя.
+   */
+  getUserMessages(userId: number): number[] {
+    return this.userUserMessages.get(userId) || [];
+  }
+
+  /**
+   * Очищает список сообщений пользователя.
+   */
+  clearUserMessages(userId: number): void {
+    this.userUserMessages.set(userId, []);
   }
 }
 

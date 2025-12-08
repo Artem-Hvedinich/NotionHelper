@@ -25,6 +25,11 @@ export class MessageHandlers {
 
   const userId = ctx.from.id;
   const text = ctx.message.text;
+  
+    // Отслеживаем сообщение пользователя для последующего удаления
+    if ('message_id' in ctx.message) {
+      userStateService.trackUserMessage(userId, ctx.message.message_id);
+    }
     
     // Обработка кнопок главного меню
     if (await this.handleMainMenuButtons(ctx, text)) {
@@ -255,19 +260,21 @@ export class MessageHandlers {
    * Возвращает true, если сообщение было обработано как кнопка меню.
    */
   /**
-   * Вспомогательная функция для удаления всех сообщений бота (кроме главного меню).
+   * Вспомогательная функция для удаления всех сообщений бота и пользователя (кроме главного меню).
    */
   private async clearBotMessages(ctx: Context): Promise<void> {
     const userId = ctx.from!.id;
     const chatId = ctx.chat!.id;
-    const messageIds = userStateService.getUserBotMessages(userId);
+    const botMessageIds = userStateService.getUserBotMessages(userId);
+    const userMessageIds = userStateService.getUserMessages(userId);
     const mainMenuMessageId = userStateService.getMainMenuMessage(userId);
     
-    if (messageIds && messageIds.length > 0) {
+    // Удаляем сообщения бота
+    if (botMessageIds && botMessageIds.length > 0) {
       try {
         // Удаляем сообщения в обратном порядке (от новых к старым)
         // Исключаем сообщение с главным меню
-        const messagesToDelete = [...messageIds]
+        const messagesToDelete = [...botMessageIds]
           .filter(msgId => msgId !== mainMenuMessageId)
           .reverse();
         
@@ -299,6 +306,37 @@ export class MessageHandlers {
       } else {
         userStateService.clearUserBotMessages(userId);
       }
+    }
+    
+    // Удаляем сообщения пользователя
+    if (userMessageIds && userMessageIds.length > 0) {
+      try {
+        // Удаляем сообщения пользователя в обратном порядке
+        const messagesToDelete = [...userMessageIds].reverse();
+        
+        for (const msgId of messagesToDelete) {
+          try {
+            await ctx.telegram.deleteMessage(chatId, msgId);
+            // Небольшая задержка между удалениями, чтобы не превысить rate limit
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (error: any) {
+            // Игнорируем ошибки удаления (сообщение уже удалено, недоступно или старше 48 часов)
+            const errorMessage = error.message || '';
+            if (
+              !errorMessage.includes('message to delete not found') &&
+              !errorMessage.includes('message can\'t be deleted') &&
+              !errorMessage.includes('bad request') &&
+              !errorMessage.includes('message not found')
+            ) {
+              // Тихо игнорируем остальные ошибки
+            }
+          }
+        }
+      } catch (error: any) {
+        // Игнорируем общие ошибки
+      }
+      // Очищаем список сообщений пользователя
+      userStateService.clearUserMessages(userId);
     }
   }
 
