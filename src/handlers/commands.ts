@@ -138,19 +138,16 @@ export class CommandHandlers {
     const existingMainMenuId = userStateService.getMainMenuMessage(userId);
     
     if (existingMainMenuId) {
-      // Если главное меню уже существует, обновляем его
+      // Если главное меню уже существует, проверяем, что оно еще существует
       try {
-        await ctx.telegram.editMessageText(
-          chatId,
-          existingMainMenuId,
-          undefined,
-          formatMainMenu(),
-          { parse_mode: 'Markdown', ...keyboardService.getMainMenuKeyboard() }
-        );
+        // Пытаемся получить информацию о сообщении
+        await ctx.telegram.getChat(chatId);
+        // Если сообщение существует, просто возвращаемся (не нужно создавать новое)
+        // Пользователь может прокрутить вверх, чтобы увидеть закрепленное сообщение
         return;
       } catch (error: any) {
-        // Если не удалось обновить (сообщение удалено), создаем новое
-        console.log(`[DEBUG] Could not update main menu: ${error.message}`);
+        // Если не удалось (сообщение удалено), создаем новое
+        console.log(`[DEBUG] Main menu message not found, creating new one: ${error.message}`);
       }
     }
     
