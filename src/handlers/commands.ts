@@ -125,8 +125,8 @@ export class CommandHandlers {
       const pendingTasks = tasks.filter(task => !status[task.propertyName]);
       
       // Формируем сообщение с улучшенным форматированием
-      let message = createHeader('Утренняя рутина', '🌅', 30);
-      message += '\n\n';
+      let message = createHeader('Утренняя рутина', '🌅', 25);
+      message += '\n';
       
       // Статистика
       const score = nonCheckboxProps.find(p => p.name.toLowerCase().includes('оценка') || p.name.toLowerCase().includes('score'));
@@ -144,7 +144,7 @@ export class CommandHandlers {
       // Список задач
       message += formatTaskList(completedTasks, pendingTasks, true);
       
-      message += '\n' + createHeader('Что ты уже сделал сегодня?', '', 30);
+      message += '\n*Что ты уже сделал сегодня?*';
       
       // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
       try {

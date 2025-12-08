@@ -256,7 +256,6 @@ export class MessageHandlers {
    */
   private async handleMainMenuButtons(ctx: Context, text: string): Promise<boolean> {
     const buttonMap: Record<string, () => Promise<void>> = {
-      '/start': () => commandHandlers.handleStart(ctx),
       '☀️ Утро': () => commandHandlers.handleMorning(ctx),
       '🕒 День': async () => {
         // Показываем чеклист дневной рутины

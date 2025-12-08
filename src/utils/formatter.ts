@@ -6,17 +6,17 @@
 /**
  * Создает горизонтальный разделитель заданной длины.
  */
-export function createSeparator(length: number = 30, char: string = '━'): string {
+export function createSeparator(length: number = 25, char: string = '─'): string {
   return char.repeat(length);
 }
 
 /**
  * Создает заголовок с разделителями.
  */
-export function createHeader(title: string, emoji?: string, length: number = 30): string {
+export function createHeader(title: string, emoji?: string, length: number = 25): string {
   const separator = createSeparator(length);
   const prefix = emoji ? `${emoji} ` : '';
-  return `${separator}\n${prefix}${title}\n${separator}`;
+  return `${prefix}*${title}*\n${separator}`;
 }
 
 /**
@@ -53,7 +53,6 @@ export function formatTaskList(
   
   if (completedTasks.length > 0 && showCompleted) {
     result += `\n✅ *Выполнено* (${completedTasks.length}):\n`;
-    result += createSeparator(25, '─') + '\n';
     completedTasks.forEach(task => {
       result += `✅ ${task.label}\n`;
     });
@@ -62,7 +61,6 @@ export function formatTaskList(
   if (pendingTasks.length > 0) {
     if (result) result += '\n';
     result += `⬜ *Осталось* (${pendingTasks.length}):\n`;
-    result += createSeparator(25, '─') + '\n';
     pendingTasks.forEach(task => {
       result += `⬜ ${task.label}\n`;
     });
@@ -104,9 +102,7 @@ export function formatTaskInfo(
   status: string,
   additionalFields?: Array<{ name: string; value: string }>
 ): string {
-  let message = createHeader('Задача', '📌', 25);
-  message += `\n\n*${title}*\n`;
-  message += createSeparator(25, '─') + '\n';
+  let message = `📌 *${title}*\n\n`;
   message += `📊 *Статус*: ${status}`;
   
   if (additionalFields && additionalFields.length > 0) {
@@ -130,8 +126,7 @@ export function formatTaskListByStatus(
   tasks: Array<{ title: string; shortId: string }>,
   totalCount?: number
 ): string {
-  const header = createHeader(status, '📋', 25);
-  let message = header;
+  let message = `📋 *${status}*`;
   
   if (tasks.length === 0) {
     const statusLower = status.toLowerCase();
@@ -140,7 +135,7 @@ export function formatTaskListByStatus(
     message += `\n\n📭 Задач не найдено${isDoneStatus ? ' (отредактированных сегодня)' : ''}`;
   } else {
     if (totalCount !== undefined) {
-      message += `\n\nВсего задач: *${totalCount}*`;
+      message += ` (${totalCount})`;
     }
     message += '\n\n';
     tasks.forEach((task, index) => {
@@ -155,52 +150,37 @@ export function formatTaskListByStatus(
  * Форматирует главное меню с приветствием.
  */
 export function formatMainMenu(): string {
-  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👋 *Привет!*
+  return `👋 *Привет!*
 
 Я бот для записи задач в Notion.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 *Выбери действие из меню ниже:*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+📋 *Выбери действие из меню ниже:*`;
 }
 
 /**
  * Форматирует сообщение о выборе базы данных.
  */
 export function formatDatabaseSelection(dbTitle: string): string {
-  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ *Выбрана база*: ${dbTitle}
+  return `✅ *Выбрана база*: ${dbTitle}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📝 *Что добавить?*
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+📝 *Что добавить?*`;
 }
 
 /**
  * Форматирует сообщение о создании задачи.
  */
 export function formatTaskCreated(taskTitle: string): string {
-  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ *Задача создана!*
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 ${taskTitle}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+  return `✅ *Задача создана!*\n\n📌 ${taskTitle}`;
 }
 
 /**
  * Форматирует сообщение с подтверждением удаления.
  */
 export function formatDeleteConfirmation(taskTitle: string): string {
-  return `━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ *Подтверждение удаления*
+  return `⚠️ *Подтверждение удаления*
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Вы уверены, что хотите удалить задачу:
 
-*${taskTitle}*
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+*${taskTitle}*`;
 }
 
