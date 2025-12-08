@@ -10,6 +10,45 @@ import { createHeader, formatRoutineStats, formatTaskList, formatMainMenu, forma
  */
 export class CommandHandlers {
   /**
+   * Вспомогательная функция для удаления всех сообщений бота.
+   */
+  private async clearBotMessages(ctx: Context): Promise<void> {
+    const userId = ctx.from!.id;
+    const chatId = ctx.chat!.id;
+    const messageIds = userStateService.getUserBotMessages(userId);
+    
+    if (messageIds && messageIds.length > 0) {
+      try {
+        // Удаляем сообщения в обратном порядке (от новых к старым)
+        const messagesToDelete = [...messageIds].reverse();
+        
+        for (const msgId of messagesToDelete) {
+          try {
+            await ctx.telegram.deleteMessage(chatId, msgId);
+            // Небольшая задержка между удалениями, чтобы не превысить rate limit
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (error: any) {
+            // Игнорируем ошибки удаления (сообщение уже удалено, недоступно или старше 48 часов)
+            const errorMessage = error.message || '';
+            if (
+              !errorMessage.includes('message to delete not found') &&
+              !errorMessage.includes('message can\'t be deleted') &&
+              !errorMessage.includes('bad request') &&
+              !errorMessage.includes('message not found')
+            ) {
+              // Тихо игнорируем остальные ошибки
+            }
+          }
+        }
+      } catch (error: any) {
+        // Игнорируем общие ошибки
+      }
+      // Очищаем список сообщений
+      userStateService.clearUserBotMessages(userId);
+    }
+  }
+
+  /**
    * Обработчик команды /start.
    * Удаляет все предыдущие сообщения бота и показывает меню выбора базы.
    */
@@ -29,44 +68,7 @@ export class CommandHandlers {
     }
     
     // Удаляем все предыдущие сообщения бота
-    const messageIds = userStateService.getUserBotMessages(userId);
-    console.log(`[DEBUG] User ${userId}: Found ${messageIds.length} messages to delete`);
-    
-    if (messageIds && messageIds.length > 0) {
-      try {
-        // Удаляем сообщения в обратном порядке (от новых к старым)
-        // Создаем копию массива, чтобы не изменять оригинал
-        const messagesToDelete = [...messageIds].reverse();
-        let deletedCount = 0;
-        let errorCount = 0;
-        
-        for (const msgId of messagesToDelete) {
-          try {
-            await ctx.telegram.deleteMessage(chatId, msgId);
-            deletedCount++;
-            // Небольшая задержка между удалениями, чтобы не превысить rate limit
-            await new Promise(resolve => setTimeout(resolve, 50));
-          } catch (error: any) {
-            errorCount++;
-            // Игнорируем ошибки удаления (сообщение уже удалено, недоступно или старше 48 часов)
-            const errorMessage = error.message || '';
-            if (
-              !errorMessage.includes('message to delete not found') &&
-              !errorMessage.includes('message can\'t be deleted') &&
-              !errorMessage.includes('bad request') &&
-              !errorMessage.includes('message not found')
-            ) {
-              console.error(`[DEBUG] Error deleting message ${msgId}:`, errorMessage);
-            }
-          }
-        }
-        console.log(`[DEBUG] Deleted ${deletedCount} messages, ${errorCount} errors`);
-      } catch (error: any) {
-        console.error('Error deleting messages:', error);
-      }
-      // Очищаем список сообщений
-      userStateService.clearUserBotMessages(userId);
-    }
+    await this.clearBotMessages(ctx);
     
     // Отправляем новое сообщение с главным меню
     const sentMessage = await ctx.reply(
@@ -108,6 +110,9 @@ export class CommandHandlers {
    * Показывает чеклист утренней рутины с текущей статистикой.
    */
   async handleMorning(ctx: Context): Promise<void> {
+    // Очищаем предыдущие сообщения бота
+    await this.clearBotMessages(ctx);
+    
     let loadingMsg: any = null;
     try {
       // Показываем индикатор загрузки
@@ -233,6 +238,9 @@ export class CommandHandlers {
    * Показывает список статусов для выбора.
    */
   async handleDay(ctx: Context): Promise<void> {
+    // Очищаем предыдущие сообщения бота
+    await this.clearBotMessages(ctx);
+    
     let loadingMsg: any = null;
     try {
       // Показываем индикатор загрузки
@@ -331,6 +339,9 @@ export class CommandHandlers {
    * Показывает список статусов для выбора.
    */
   async handleLater(ctx: Context): Promise<void> {
+    // Очищаем предыдущие сообщения бота
+    await this.clearBotMessages(ctx);
+    
     let loadingMsg: any = null;
     try {
       // Показываем индикатор загрузки
