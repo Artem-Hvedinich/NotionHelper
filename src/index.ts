@@ -61,6 +61,25 @@ bot.action(/^day_status:(.+)$/, async (ctx) => {
   await actionHandlers.handleDayStatusSelection(ctx, status);
 });
 
+// Обработка изменения статуса задачи дневной рутины (ds = day status)
+bot.action(/^ds:(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const newStatus = ctx.match[2];
+  await actionHandlers.handleDayTaskStatusChange(ctx, shortId, newStatus);
+});
+
+// Обработка обновления задачи дневной рутины (dr = day refresh)
+bot.action(/^dr:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleDayTaskRefresh(ctx, shortId);
+});
+
+// Обработка удаления задачи дневной рутины (dd = day delete)
+bot.action(/^dd:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleDayTaskDelete(ctx, shortId);
+});
+
 // --- Регистрация обработчиков сообщений ---
 
 bot.on('text', (ctx) => messageHandlers.handleText(ctx));

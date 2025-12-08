@@ -1,6 +1,6 @@
 import { Context } from 'telegraf';
 import { getDatabaseByKey, NotionDatabaseKey } from '../config/databases';
-import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus } from '../services/notion';
+import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus, updateDayRoutineTaskStatus, getDayRoutineTaskInfo, getDayRoutineStatuses } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
 
@@ -255,17 +255,168 @@ export class ActionHandlers {
 
   /**
    * Обработчик выбора статуса дневной рутины.
-   * Показывает список задач с выбранным статусом.
+   * Отправляет каждую задачу отдельным сообщением с кнопками управления.
    */
   async handleDayStatusSelection(ctx: Context, status: string): Promise<void> {
     try {
       await ctx.answerCbQuery('Загружаю задачи...');
-      const tasksList = await getDayRoutineTasksByStatus(status);
-      const sentMessage = await ctx.reply(tasksList, { parse_mode: 'Markdown' });
-      userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+      const tasks = await getDayRoutineTasksByStatus(status);
+      
+      if (tasks.length === 0) {
+        const statusLower = status.toLowerCase();
+        const isDoneStatus = statusLower.includes('готово') || statusLower.includes('done') || statusLower.includes('завершено') || statusLower.includes('completed');
+        const message = `📋 Задач со статусом "${status}" не найдено${isDoneStatus ? ' (отредактированных сегодня)' : ''}.`;
+        const sentMessage = await ctx.reply(message);
+        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+        return;
+      }
+
+      // Отправляем заголовок
+      const headerMessage = await ctx.reply(`📋 *Задачи со статусом "${status}"* (${tasks.length}):`, { parse_mode: 'Markdown' });
+      userStateService.trackBotMessage(ctx.from!.id, headerMessage.message_id);
+
+      // Отправляем каждую задачу отдельным сообщением с кнопками
+      for (const task of tasks) {
+        const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task);
+        const taskMessage = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+        const sentMessage = await ctx.reply(taskMessage, { 
+          parse_mode: 'Markdown',
+          ...keyboard 
+        });
+        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+      }
     } catch (error: any) {
       console.error('Error fetching tasks by status:', error);
       await ctx.answerCbQuery('Ошибка загрузки');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик изменения статуса задачи дневной рутины.
+   */
+  async handleDayTaskStatusChange(ctx: Context, shortId: string, newStatusShort: string): Promise<void> {
+    try {
+      // Получаем полный pageId по короткому ID
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.answerCbQuery('❌ Задача не найдена');
+        return;
+      }
+
+      // Получаем полный статус из списка статусов
+      const statuses = await getDayRoutineStatuses();
+      const newStatus = statuses.find((s: string) => s.startsWith(newStatusShort)) || newStatusShort;
+
+      await ctx.answerCbQuery('Обновляю статус...');
+      await updateDayRoutineTaskStatus(pageId, newStatus);
+      
+      // Получаем обновленную информацию о задаче
+      const task = await getDayRoutineTaskInfo(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task);
+      
+      const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+      
+      // Обновляем сообщение
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          ...keyboard
+        });
+      }
+      
+      await ctx.answerCbQuery(`✅ Статус изменен на "${newStatus}"`);
+    } catch (error: any) {
+      console.error('Error updating task status:', error);
+      await ctx.answerCbQuery('Ошибка обновления');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик обновления задачи дневной рутины.
+   */
+  async handleDayTaskRefresh(ctx: Context, shortId: string): Promise<void> {
+    try {
+      // Получаем полный pageId по короткому ID
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.answerCbQuery('❌ Задача не найдена');
+        return;
+      }
+
+      await ctx.answerCbQuery('Обновляю...');
+      const task = await getDayRoutineTaskInfo(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task);
+      
+      const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+      
+      // Обновляем сообщение
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          ...keyboard
+        });
+      }
+      
+      await ctx.answerCbQuery('✅ Обновлено');
+    } catch (error: any) {
+      console.error('Error refreshing task:', error);
+      await ctx.answerCbQuery('Ошибка обновления');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик удаления задачи дневной рутины.
+   */
+  async handleDayTaskDelete(ctx: Context, shortId: string): Promise<void> {
+    try {
+      // Получаем полный pageId по короткому ID
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.answerCbQuery('❌ Задача не найдена');
+        return;
+      }
+
+      await ctx.answerCbQuery('Удаляю...');
+      
+      // В Notion API нет прямого метода удаления, но можно архивировать страницу
+      const { Client } = await import('@notionhq/client');
+      const notion = new Client({ auth: process.env.NOTION_API_KEY });
+      
+      await notion.pages.update({
+        page_id: pageId,
+        archived: true
+      });
+
+      // Удаляем регистрацию задачи
+      userStateService.unregisterTaskId(shortId);
+      
+      // Удаляем сообщение с задачей
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        await ctx.deleteMessage();
+      }
+      
+      await ctx.answerCbQuery('✅ Задача удалена');
+    } catch (error: any) {
+      console.error('Error deleting task:', error);
+      await ctx.answerCbQuery('Ошибка удаления');
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }

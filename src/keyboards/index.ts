@@ -1,7 +1,8 @@
 import { Markup } from 'telegraf';
 import { DATABASES, NotionDatabaseKey } from '../config/databases';
-import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses } from '../services/notion';
+import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses, DayRoutineTask } from '../services/notion';
 import { MorningTask } from '../types';
+import { userStateService } from '../services/userState';
 
 /**
  * Сервис для генерации клавиатур Telegram.
@@ -97,6 +98,54 @@ export class KeyboardService {
     );
     
     return Markup.inlineKeyboard(buttons, { columns: 2 });
+  }
+
+  /**
+   * Генерирует клавиатуру для управления задачей дневной рутины.
+   */
+  async getDayRoutineTaskKeyboard(task: DayRoutineTask) {
+    const statuses = await getDayRoutineStatuses();
+    
+    // Используем короткий ID вместо полного pageId для callback_data
+    const shortId = userStateService.registerTaskId(task.pageId);
+    
+    // Кнопки для изменения статуса (только другие статусы)
+    // Ограничиваем длину статуса в callback_data (максимум 20 символов)
+    const statusButtons = statuses
+      .filter(status => status !== task.status)
+      .map(status => {
+        // Обрезаем статус до 20 символов для callback_data
+        const statusShort = status.length > 20 ? status.substring(0, 20) : status;
+        return Markup.button.callback(`🔄 ${status}`, `ds:${shortId}:${statusShort}`);
+      });
+    
+    // Кнопка для обновления задачи
+    const refreshButton = Markup.button.callback('🔄 Обновить', `dr:${shortId}`);
+    
+    // Кнопка для удаления задачи
+    const deleteButton = Markup.button.callback('🗑️ Удалить', `dd:${shortId}`);
+    
+    // Группируем кнопки: сначала статусы (по 2 в ряд), потом действия
+    const buttons: any[] = [];
+    
+    // Добавляем кнопки статусов по 2 в ряд
+    for (let i = 0; i < statusButtons.length; i += 2) {
+      if (i + 1 < statusButtons.length) {
+        buttons.push([statusButtons[i], statusButtons[i + 1]]);
+      } else {
+        buttons.push([statusButtons[i]]);
+      }
+    }
+    
+    // Добавляем кнопки действий
+    if (statusButtons.length > 0) {
+      buttons.push([refreshButton, deleteButton]);
+    } else {
+      buttons.push([refreshButton]);
+      buttons.push([deleteButton]);
+    }
+    
+    return Markup.inlineKeyboard(buttons);
   }
 }
 

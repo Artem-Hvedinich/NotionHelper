@@ -724,10 +724,21 @@ export async function getDayRoutineStatuses(): Promise<string[]> {
 }
 
 /**
+ * Интерфейс для задачи дневной рутины.
+ */
+export interface DayRoutineTask {
+    pageId: string;
+    title: string;
+    status: string;
+    lastEditedTime: string;
+}
+
+/**
  * Получает задачи дневной рутины по статусу.
  * Если статус "Готово" (или похожий), фильтрует по Last edited time = сегодня.
+ * Возвращает массив задач с полной информацией.
  */
-export async function getDayRoutineTasksByStatus(status: string): Promise<string> {
+export async function getDayRoutineTasksByStatus(status: string): Promise<DayRoutineTask[]> {
     const dbConfig = DATABASES.dayRoutine;
     if (!dbConfig.id) {
         throw new Error('ID базы dayRoutine не настроен');
@@ -792,7 +803,7 @@ export async function getDayRoutineTasksByStatus(status: string): Promise<string
         });
 
         if (response.results.length === 0) {
-            return `📋 Задач со статусом "${status}" не найдено${isDoneStatus ? ' (отредактированных сегодня)' : ''}.`;
+            return [];
         }
 
         // Динамически находим поле заголовка
@@ -805,7 +816,7 @@ export async function getDayRoutineTasksByStatus(status: string): Promise<string
         
         const titleProp = titlePropName || dbConfig.propName || 'Name';
         
-        const tasks = response.results.map((page: any) => {
+        const tasks: DayRoutineTask[] = response.results.map((page: any) => {
             // Пробуем получить заголовок из поля title
             const titleProperty = page.properties[titleProp];
             let title = 'Без названия';
@@ -838,13 +849,120 @@ export async function getDayRoutineTasksByStatus(status: string): Promise<string
                 }
             }
             
-            return `• ${title}`;
+            return {
+                pageId: page.id,
+                title: title,
+                status: status,
+                lastEditedTime: page.last_edited_time || ''
+            };
         });
 
-        return `📋 *Задачи со статусом "${status}"*${isDoneStatus ? ' (отредактированные сегодня)' : ''}:\n\n${tasks.join('\n')}`;
+        return tasks;
 
     } catch (error: any) {
         console.error('Error fetching tasks by status:', error);
         throw new Error(`Не удалось получить задачи: ${error.message}`);
+    }
+}
+
+/**
+ * Обновляет статус задачи в дневной рутине.
+ */
+export async function updateDayRoutineTaskStatus(pageId: string, newStatus: string): Promise<void> {
+    const dbConfig = DATABASES.dayRoutine;
+    if (!dbConfig.id) {
+        throw new Error('ID базы dayRoutine не настроен');
+    }
+
+    const statusPropertyName = await findStatusProperty(dbConfig.id);
+    if (!statusPropertyName) {
+        throw new Error('Не найдено поле статуса в базе данных дневной рутины');
+    }
+
+    // Получаем схему базы данных для определения типа поля статуса
+    const dbSchema = await notion.databases.retrieve({ database_id: dbConfig.id });
+    const statusProp = dbSchema.properties[statusPropertyName];
+    // @ts-ignore
+    const statusPropType = statusProp?.type;
+
+    try {
+        const updateProperties: Record<string, any> = {};
+        
+        if (statusPropType === 'select') {
+            updateProperties[statusPropertyName] = {
+                select: { name: newStatus }
+            };
+        } else if (statusPropType === 'status') {
+            updateProperties[statusPropertyName] = {
+                status: { name: newStatus }
+            };
+        } else {
+            throw new Error(`Неподдерживаемый тип поля статуса: ${statusPropType}`);
+        }
+
+        await notion.pages.update({
+            page_id: pageId,
+            properties: updateProperties
+        });
+    } catch (error: any) {
+        console.error('Error updating task status:', error);
+        throw new Error(`Не удалось обновить статус задачи: ${error.message}`);
+    }
+}
+
+/**
+ * Получает полную информацию о задаче дневной рутины по ID страницы.
+ */
+export async function getDayRoutineTaskInfo(pageId: string): Promise<DayRoutineTask> {
+    try {
+        const page = await notion.pages.retrieve({ page_id: pageId });
+        
+        if (!('properties' in page)) {
+            throw new Error('Не удалось получить свойства страницы');
+        }
+
+        const dbConfig = DATABASES.dayRoutine;
+        const titlePropName = await findTitleProperty(dbConfig.id);
+        const titleProp = titlePropName || dbConfig.propName || 'Name';
+        
+        const statusPropertyName = await findStatusProperty(dbConfig.id);
+        if (!statusPropertyName) {
+            throw new Error('Не найдено поле статуса');
+        }
+
+        // Получаем заголовок
+        let title = 'Без названия';
+        const titleProperty = page.properties[titleProp];
+        if (titleProperty) {
+            // @ts-ignore
+            if (titleProperty.type === 'title' && titleProperty.title) {
+                // @ts-ignore
+                title = titleProperty.title[0]?.plain_text || 'Без названия';
+            }
+        }
+
+        // Получаем статус
+        let status = '';
+        const statusProperty = page.properties[statusPropertyName];
+        if (statusProperty) {
+            // @ts-ignore
+            if (statusProperty.type === 'select' && statusProperty.select) {
+                // @ts-ignore
+                status = statusProperty.select.name || '';
+            } else if (statusProperty.type === 'status' && statusProperty.status) {
+                // @ts-ignore
+                status = statusProperty.status.name || '';
+            }
+        }
+
+        return {
+            pageId: page.id,
+            title: title,
+            status: status,
+            lastEditedTime: page.last_edited_time || ''
+        };
+    } catch (error: any) {
+        console.error('Error fetching task info:', error);
+        throw new Error(`Не удалось получить информацию о задаче: ${error.message}`);
     }
 }

@@ -14,6 +14,10 @@ class UserStateService {
   
   // Хранилище ID сообщений бота для каждого пользователя (для удаления при /start)
   private userBotMessages = new Map<number, number[]>();
+  
+  // Хранилище для связи коротких ID с pageId (для callback_data)
+  private taskIdMap = new Map<string, string>(); // shortId -> pageId
+  private taskIdCounter = 0;
 
   /**
    * Устанавливает выбранную базу данных для пользователя.
@@ -68,6 +72,29 @@ class UserStateService {
    */
   clearUserBotMessages(userId: number): void {
     this.userBotMessages.set(userId, []);
+  }
+
+  /**
+   * Регистрирует pageId и возвращает короткий идентификатор для использования в callback_data.
+   */
+  registerTaskId(pageId: string): string {
+    const shortId = `t${this.taskIdCounter++}`;
+    this.taskIdMap.set(shortId, pageId);
+    return shortId;
+  }
+
+  /**
+   * Получает pageId по короткому идентификатору.
+   */
+  getTaskPageId(shortId: string): string | null {
+    return this.taskIdMap.get(shortId) || null;
+  }
+
+  /**
+   * Удаляет регистрацию задачи (опционально, для очистки памяти).
+   */
+  unregisterTaskId(shortId: string): void {
+    this.taskIdMap.delete(shortId);
   }
 }
 
