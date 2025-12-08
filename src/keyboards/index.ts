@@ -317,7 +317,8 @@ export class KeyboardService {
       .filter(status => status !== task.status)
       .map(status => {
         const statusShort = status.length > 20 ? status.substring(0, 20) : status;
-        return Markup.button.callback(`🔄 ${status}`, `ls:${shortId}:${statusShort}`);
+        const emoji = getStatusEmoji(status);
+        return Markup.button.callback(`${emoji} ${status}`, `ls:${shortId}:${statusShort}`);
       });
     
     for (let i = 0; i < statusButtons.length; i += 2) {
