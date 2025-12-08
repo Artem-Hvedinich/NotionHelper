@@ -254,6 +254,45 @@ export class MessageHandlers {
    * Обрабатывает нажатия на кнопки главного меню.
    * Возвращает true, если сообщение было обработано как кнопка меню.
    */
+  /**
+   * Вспомогательная функция для удаления всех сообщений бота.
+   */
+  private async clearBotMessages(ctx: Context): Promise<void> {
+    const userId = ctx.from!.id;
+    const chatId = ctx.chat!.id;
+    const messageIds = userStateService.getUserBotMessages(userId);
+    
+    if (messageIds && messageIds.length > 0) {
+      try {
+        // Удаляем сообщения в обратном порядке (от новых к старым)
+        const messagesToDelete = [...messageIds].reverse();
+        
+        for (const msgId of messagesToDelete) {
+          try {
+            await ctx.telegram.deleteMessage(chatId, msgId);
+            // Небольшая задержка между удалениями, чтобы не превысить rate limit
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (error: any) {
+            // Игнорируем ошибки удаления (сообщение уже удалено, недоступно или старше 48 часов)
+            const errorMessage = error.message || '';
+            if (
+              !errorMessage.includes('message to delete not found') &&
+              !errorMessage.includes('message can\'t be deleted') &&
+              !errorMessage.includes('bad request') &&
+              !errorMessage.includes('message not found')
+            ) {
+              // Тихо игнорируем остальные ошибки
+            }
+          }
+        }
+      } catch (error: any) {
+        // Игнорируем общие ошибки
+      }
+      // Очищаем список сообщений
+      userStateService.clearUserBotMessages(userId);
+    }
+  }
+
   private async handleMainMenuButtons(ctx: Context, text: string): Promise<boolean> {
     const buttonMap: Record<string, () => Promise<void>> = {
       '☀️ Утро': () => commandHandlers.handleMorning(ctx),
@@ -262,6 +301,9 @@ export class MessageHandlers {
         await commandHandlers.handleDay(ctx);
       },
       '🌙 Вечер': async () => {
+        // Очищаем предыдущие сообщения бота
+        await this.clearBotMessages(ctx);
+        
         const dbKey: NotionDatabaseKey = 'eveningRoutine';
         userStateService.setUserDatabase(ctx.from!.id, dbKey);
         const dbConfig = getDatabaseByKey(dbKey);
@@ -272,6 +314,9 @@ export class MessageHandlers {
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
       },
       '💡 Привычки': async () => {
+        // Очищаем предыдущие сообщения бота
+        await this.clearBotMessages(ctx);
+        
         const dbKey: NotionDatabaseKey = 'habits';
         userStateService.setUserDatabase(ctx.from!.id, dbKey);
         const dbConfig = getDatabaseByKey(dbKey);
@@ -282,10 +327,13 @@ export class MessageHandlers {
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
       },
       '📅 План дня': async () => {
+        // Очищаем предыдущие сообщения бота
+        await this.clearBotMessages(ctx);
+        
         const dbKey: NotionDatabaseKey = 'dailyPlan';
         userStateService.setUserDatabase(ctx.from!.id, dbKey);
         const dbConfig = getDatabaseByKey(dbKey);
-  const sentMessage = await ctx.reply(
+        const sentMessage = await ctx.reply(
           formatDatabaseSelection(dbConfig.title),
           { parse_mode: 'Markdown', ...keyboardService.getActionsKeyboard(dbKey) }
         );
