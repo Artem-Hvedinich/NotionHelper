@@ -230,7 +230,8 @@ export class KeyboardService {
       .map(status => {
         // Обрезаем статус до 20 символов для callback_data
         const statusShort = status.length > 20 ? status.substring(0, 20) : status;
-        return Markup.button.callback(`🔄 ${status}`, `ds:${shortId}:${statusShort}`);
+        const emoji = getStatusEmoji(status);
+        return Markup.button.callback(`${emoji} ${status}`, `ds:${shortId}:${statusShort}`);
       });
     
     // Добавляем кнопки статусов по 2 в ряд
