@@ -31,13 +31,14 @@ export function createBlock(title: string, content: string, emoji?: string): str
  * Форматирует прогресс в виде текстового прогресс-бара.
  */
 export function formatProgressBar(current: number, total: number, length: number = 10): string {
-  if (total === 0) return '░'.repeat(length);
+  if (total === 0) return '○'.repeat(length);
   
   const percentage = Math.round((current / total) * 100);
   const filled = Math.round((current / total) * length);
   const empty = length - filled;
   
-  const bar = '█'.repeat(filled) + '░'.repeat(empty);
+  // Используем более читаемые символы: ● для заполненных, ○ для пустых
+  const bar = '●'.repeat(filled) + '○'.repeat(empty);
   return `${bar} ${percentage}%`;
 }
 
