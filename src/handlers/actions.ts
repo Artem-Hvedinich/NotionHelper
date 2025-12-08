@@ -281,8 +281,9 @@ export class ActionHandlers {
       userStateService.setUserTaskListStatus(ctx.from!.id, status);
 
       // Формируем компактный список задач
+      // Используем простой текст без Markdown для списка, чтобы избежать проблем с экранированием
       const tasksList = tasks.map((task, index) => `${index + 1}. ${task.title}`).join('\n');
-      const message = `📋 *Задачи со статусом "${status}"* (${tasks.length}):\n\n${tasksList}`;
+      const message = `📋 Задачи со статусом "${status}" (${tasks.length}):\n\n${tasksList}`;
       const keyboard = keyboardService.getDayRoutineTasksListKeyboard(tasks);
 
       // Редактируем сообщение, если это callback query, иначе отправляем новое
@@ -294,12 +295,10 @@ export class ActionHandlers {
         }
         
         await ctx.editMessageText(message, {
-          parse_mode: 'Markdown',
           ...keyboard
         });
       } else {
         const sentMessage = await ctx.reply(message, {
-          parse_mode: 'Markdown',
           ...keyboard
         });
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
@@ -331,7 +330,8 @@ export class ActionHandlers {
       const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
       const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
       
-      const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+      // Используем простой текст без Markdown
+      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
       
       // Редактируем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -342,14 +342,13 @@ export class ActionHandlers {
         }
         
         await ctx.editMessageText(message, {
-          parse_mode: 'Markdown',
           ...keyboard
         });
       }
-    } catch (error: any) {
+      } catch (error: any) {
       console.error('Error opening task:', error);
-      await ctx.answerCbQuery('Ошибка загрузки');
-      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+        await ctx.answerCbQuery('Ошибка загрузки');
+        const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
   }
@@ -424,7 +423,8 @@ export class ActionHandlers {
       const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
       const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
       
-      const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+      // Используем простой текст без Markdown
+      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
       
       // Обновляем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -435,7 +435,6 @@ export class ActionHandlers {
         }
         
         await ctx.editMessageText(message, {
-          parse_mode: 'Markdown',
           ...keyboard
         });
       }
@@ -566,7 +565,8 @@ export class ActionHandlers {
       const updatedCheckboxes = await getDayRoutineTaskCheckboxes(pageId);
       const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, updatedCheckboxes);
       
-      const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+      // Используем простой текст без Markdown
+      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
       
       // Обновляем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -577,7 +577,6 @@ export class ActionHandlers {
         }
         
         await ctx.editMessageText(message, {
-          parse_mode: 'Markdown',
           ...keyboard
         });
       }

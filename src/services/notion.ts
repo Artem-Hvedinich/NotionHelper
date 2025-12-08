@@ -755,14 +755,20 @@ export async function getDayRoutineTasksByStatus(status: string): Promise<DayRou
     // @ts-ignore
     const statusPropType = statusProp?.type;
 
-    const today = new Date().toISOString().split('T')[0];
-    const todayStart = new Date(today + 'T00:00:00.000Z').toISOString();
-    const todayEnd = new Date(today + 'T23:59:59.999Z').toISOString();
+    // Получаем начало и конец сегодняшнего дня
+    // Используем текущую дату в формате YYYY-MM-DD
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+    const todayStart = new Date(todayStr + 'T00:00:00.000Z').toISOString();
+    const todayEnd = new Date(todayStr + 'T23:59:59.999Z').toISOString();
 
     try {
         // Проверяем, является ли статус "Готово" (или похожим)
         const statusLower = status.toLowerCase();
         const isDoneStatus = statusLower.includes('готово') || statusLower.includes('done') || statusLower.includes('завершено') || statusLower.includes('completed');
+        
+        console.log(`[DEBUG] Filtering for status "${status}", isDoneStatus: ${isDoneStatus}`);
+        console.log(`[DEBUG] Today range: ${todayStart} to ${todayEnd}`);
 
         // Строим фильтр
         let filter: any;
@@ -806,6 +812,31 @@ export async function getDayRoutineTasksByStatus(status: string): Promise<DayRou
             return [];
         }
 
+        // Если статус "Готово", дополнительно фильтруем по дате редактирования на стороне клиента
+        // (на случай, если API фильтр не сработал правильно)
+        let filteredResults = response.results;
+        if (isDoneStatus) {
+            const today = new Date();
+            const todayStartLocal = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const todayEndLocal = new Date(todayStartLocal);
+            todayEndLocal.setDate(todayEndLocal.getDate() + 1);
+            
+            filteredResults = response.results.filter((page: any) => {
+                const lastEdited = page.last_edited_time;
+                if (!lastEdited) return false;
+                
+                const editedDate = new Date(lastEdited);
+                // Проверяем, что дата редактирования попадает в сегодняшний день
+                return editedDate >= todayStartLocal && editedDate < todayEndLocal;
+            });
+            
+            console.log(`[DEBUG] Filtered tasks for "Готово": ${filteredResults.length} out of ${response.results.length} tasks`);
+        }
+
+        if (filteredResults.length === 0) {
+            return [];
+        }
+
         // Динамически находим поле заголовка
         const titlePropName = await findTitleProperty(dbConfig.id);
         if (!titlePropName) {
@@ -816,7 +847,7 @@ export async function getDayRoutineTasksByStatus(status: string): Promise<DayRou
         
         const titleProp = titlePropName || dbConfig.propName || 'Name';
         
-        const tasks: DayRoutineTask[] = response.results.map((page: any) => {
+        const tasks: DayRoutineTask[] = filteredResults.map((page: any) => {
             // Пробуем получить заголовок из поля title
             const titleProperty = page.properties[titleProp];
             let title = 'Без названия';
