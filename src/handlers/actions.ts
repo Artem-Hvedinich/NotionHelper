@@ -3,6 +3,7 @@ import { getDatabaseByKey, NotionDatabaseKey, DATABASES } from '../config/databa
 import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus, updateDayRoutineTaskStatus, getDayRoutineTaskInfo, getDayRoutineStatuses, getDayRoutineTaskCheckboxes, updateDayRoutineTaskCheckbox, getDatabaseCheckboxProperties, createPageInDatabase, getPageEditableProperties, updatePageProperty, getLaterTasksByStatus, getLaterTasksStatuses, getLaterTaskInfo, getLaterTaskCheckboxes, updateLaterTaskStatus, getDatabaseKeyByPageId, getDatabaseStatuses } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
+import { formatTaskInfo, formatTaskListByStatus, formatTaskCreated, formatDeleteConfirmation } from '../utils/formatter';
 
 /**
  * Обработчики действий (callback queries) бота.
@@ -304,28 +305,12 @@ export class ActionHandlers {
       await ctx.answerCbQuery('Загружаю задачи...');
       const tasks = await getDayRoutineTasksByStatus(status);
       
-      if (tasks.length === 0) {
-        const statusLower = status.toLowerCase();
-        const isDoneStatus = statusLower.includes('готово') || statusLower.includes('done') || statusLower.includes('завершено') || statusLower.includes('completed');
-        const message = `📋 Задач со статусом "${status}" не найдено${isDoneStatus ? ' (отредактированных сегодня)' : ''}.`;
-        
-        // Редактируем сообщение, если это callback query
-        if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
-          await ctx.editMessageText(message);
-        } else {
-          const sentMessage = await ctx.reply(message);
-          userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
-        }
-        return;
-      }
-
       // Сохраняем статус для навигации назад
       userStateService.setUserTaskListStatus(ctx.from!.id, status);
 
-      // Формируем компактный список задач
-      // Используем простой текст без Markdown для списка, чтобы избежать проблем с экранированием
-      const tasksList = tasks.map((task, index) => `${index + 1}. ${task.title}`).join('\n');
-      const message = `📋 Задачи со статусом "${status}" (${tasks.length}):\n\n${tasksList}`;
+      // Формируем список задач с улучшенным форматированием
+      const tasksForList = tasks.map(task => ({ title: task.title, shortId: task.pageId }));
+      const message = formatTaskListByStatus(status, tasksForList, tasks.length);
       const keyboard = keyboardService.getDayRoutineTasksListKeyboard(tasks);
 
       // Редактируем сообщение, если это callback query, иначе отправляем новое
@@ -379,25 +364,22 @@ export class ActionHandlers {
       const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
       
       // Формируем сообщение с информацией о задаче
-      let message = `✅ Задача создана!\n\n📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      // Добавляем информацию о других полях (кроме статуса, title и чекбоксов)
-      if (editableProperties && editableProperties.length > 0) {
-        const statusPropertyName = await this.findStatusPropertyName(pageId);
-        const otherProps = editableProperties.filter(p => 
+      const statusPropertyName = await this.findStatusPropertyName(pageId);
+      const otherProps = editableProperties
+        .filter(p => 
           p.type !== 'checkbox' && 
           p.type !== 'title' && 
           p.name !== statusPropertyName && 
           p.value
-        );
-        if (otherProps.length > 0) {
-          message += '\n\n';
-          otherProps.forEach(prop => {
-            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
-            message += `${prop.name}: ${valueDisplay}\n`;
-          });
-        }
-      }
+        )
+        .map(p => ({
+          name: p.name,
+          value: p.value.length > 50 ? p.value.substring(0, 47) + '...' : p.value
+        }));
+      
+      let message = formatTaskCreated(task.title);
+      message += '\n\n';
+      message += formatTaskInfo(task.title, task.status, otherProps);
       
       // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
       try {
@@ -1051,24 +1033,20 @@ export class ActionHandlers {
       const editableProperties = await getPageEditableProperties(pageId);
       const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
       
-      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      if (editableProperties && editableProperties.length > 0) {
-        const statusPropertyName = await this.findStatusPropertyName(pageId);
-        const otherProps = editableProperties.filter(p => 
+      const statusPropertyName = await this.findStatusPropertyName(pageId);
+      const otherProps = editableProperties
+        .filter(p => 
           p.type !== 'checkbox' && 
           p.type !== 'title' && 
           p.name !== statusPropertyName && 
           p.value
-        );
-        if (otherProps.length > 0) {
-          message += '\n\n';
-          otherProps.forEach(prop => {
-            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
-            message += `${prop.name}: ${valueDisplay}\n`;
-          });
-        }
-      }
+        )
+        .map(p => ({
+          name: p.name,
+          value: p.value.length > 50 ? p.value.substring(0, 47) + '...' : p.value
+        }));
+      
+      const message = formatTaskInfo(task.title, task.status, otherProps);
 
       // Если это callback query, редактируем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -1106,24 +1084,20 @@ export class ActionHandlers {
       const editableProperties = await getPageEditableProperties(pageId);
       const keyboard = await keyboardService.getLaterTaskKeyboard(task, checkboxes, editableProperties);
       
-      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      if (editableProperties && editableProperties.length > 0) {
-        const statusPropertyName = await this.findStatusPropertyName(pageId);
-        const otherProps = editableProperties.filter(p => 
+      const statusPropertyName = await this.findStatusPropertyName(pageId);
+      const otherProps = editableProperties
+        .filter(p => 
           p.type !== 'checkbox' && 
           p.type !== 'title' && 
           p.name !== statusPropertyName && 
           p.value
-        );
-        if (otherProps.length > 0) {
-          message += '\n\n';
-          otherProps.forEach(prop => {
-            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
-            message += `${prop.name}: ${valueDisplay}\n`;
-          });
-        }
-      }
+        )
+        .map(p => ({
+          name: p.name,
+          value: p.value.length > 50 ? p.value.substring(0, 47) + '...' : p.value
+        }));
+      
+      const message = formatTaskInfo(task.title, task.status, otherProps);
 
       // Если это callback query, редактируем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -1172,8 +1146,9 @@ export class ActionHandlers {
 
       userStateService.setUserTaskListStatus(ctx.from!.id, status);
 
-      const tasksList = tasks.map((task, index) => `${index + 1}. ${task.title}`).join('\n');
-      const message = `📋 Задачи со статусом "${status}" (${tasks.length}):\n\n${tasksList}`;
+      // Формируем список задач с улучшенным форматированием
+      const tasksForList = tasks.map(task => ({ title: task.title, shortId: task.pageId }));
+      const message = formatTaskListByStatus(status, tasksForList, tasks.length);
       const keyboard = keyboardService.getLaterTasksListKeyboard(tasks);
 
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -1288,24 +1263,20 @@ export class ActionHandlers {
       const editableProperties = await getPageEditableProperties(pageId);
       const keyboard = await keyboardService.getLaterTaskKeyboard(task, checkboxes, editableProperties);
       
-      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      if (editableProperties && editableProperties.length > 0) {
-        const statusPropertyName = await this.findStatusPropertyName(pageId);
-        const otherProps = editableProperties.filter(p => 
+      const statusPropertyName = await this.findStatusPropertyName(pageId);
+      const otherProps = editableProperties
+        .filter(p => 
           p.type !== 'checkbox' && 
           p.type !== 'title' && 
           p.name !== statusPropertyName && 
           p.value
-        );
-        if (otherProps.length > 0) {
-          message += '\n\n';
-          otherProps.forEach(prop => {
-            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
-            message += `${prop.name}: ${valueDisplay}\n`;
-          });
-        }
-      }
+        )
+        .map(p => ({
+          name: p.name,
+          value: p.value.length > 50 ? p.value.substring(0, 47) + '...' : p.value
+        }));
+      
+      const message = formatTaskInfo(task.title, task.status, otherProps);
       
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
         const originalMsgId = ctx.update.callback_query.message.message_id;

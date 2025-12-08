@@ -2,6 +2,7 @@ import { Context } from 'telegraf';
 import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, getDayRoutineStatuses, getDayRoutineTasksByStatus } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
+import { createHeader, formatRoutineStats, formatTaskList, formatMainMenu, formatDatabaseSelection } from '../utils/formatter';
 
 /**
  * Обработчики команд бота.
@@ -69,10 +70,8 @@ export class CommandHandlers {
     
     // Отправляем новое сообщение с главным меню
     const sentMessage = await ctx.reply(
-      'Привет! 👋\n' +
-      'Я бот для записи задач в Notion.\n\n' +
-      'Выбери действие из меню ниже:',
-      keyboardService.getMainMenuKeyboard()
+      formatMainMenu(),
+      { parse_mode: 'Markdown', ...keyboardService.getMainMenuKeyboard() }
     );
     
     // Сохраняем ID нового сообщения
@@ -121,18 +120,31 @@ export class CommandHandlers {
       const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
       const keyboard = await keyboardService.getMorningRoutineKeyboard(status);
       
-      let message = '🌅 *Доброе утро!*\n\n';
+      // Подсчитываем выполненные и оставшиеся задачи
+      const completedTasks = tasks.filter(task => status[task.propertyName]);
+      const pendingTasks = tasks.filter(task => !status[task.propertyName]);
       
-      // Динамически выводим все не-чекбокс поля
-      nonCheckboxProps.forEach(prop => {
-        message += `${prop.name}: *${prop.value}*\n`;
-      });
+      // Формируем сообщение с улучшенным форматированием
+      let message = createHeader('Утренняя рутина', '🌅', 30);
+      message += '\n\n';
       
-      if (nonCheckboxProps.length > 0) {
-        message += '\n';
-      }
+      // Статистика
+      const score = nonCheckboxProps.find(p => p.name.toLowerCase().includes('оценка') || p.name.toLowerCase().includes('score'));
+      const additionalStats = nonCheckboxProps
+        .filter(p => !p.name.toLowerCase().includes('оценка') && !p.name.toLowerCase().includes('score'))
+        .map(p => ({ name: p.name, value: p.value }));
       
-      message += 'Что ты уже сделал из утренней рутины сегодня?';
+      message += formatRoutineStats(
+        completedTasks.length,
+        tasks.length,
+        score?.value,
+        additionalStats
+      );
+      
+      // Список задач
+      message += formatTaskList(completedTasks, pendingTasks, true);
+      
+      message += '\n' + createHeader('Что ты уже сделал сегодня?', '', 30);
       
       // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
       try {

@@ -5,6 +5,7 @@ import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
 import { commandHandlers } from './commands';
 import { actionHandlers } from './actions';
+import { formatDatabaseSelection } from '../utils/formatter';
 
 /**
  * Обработчики текстовых сообщений от пользователей.
@@ -19,11 +20,11 @@ export class MessageHandlers {
       return;
     }
 
-    // Игнорируем команды
-    if (ctx.message.text.startsWith('/')) return;
+  // Игнорируем команды
+  if (ctx.message.text.startsWith('/')) return;
 
-    const userId = ctx.from.id;
-    const text = ctx.message.text;
+  const userId = ctx.from.id;
+  const text = ctx.message.text;
     
     // Обработка кнопок главного меню
     if (await this.handleMainMenuButtons(ctx, text)) {
@@ -36,11 +37,11 @@ export class MessageHandlers {
       await this.handleEditPropertyMode(ctx, editMode, text);
       return;
     }
-    
-    // 1. Проверка явного режима взаимодействия (пользователь нажал "Создать задачу")
+  
+  // 1. Проверка явного режима взаимодействия (пользователь нажал "Создать задачу")
     const state = userStateService.getUserMode(userId);
 
-    if (state.mode === 'create' && state.dbKey) {
+  if (state.mode === 'create' && state.dbKey) {
       await this.handleCreateMode(ctx, state.dbKey, text);
       return;
     }
@@ -90,13 +91,13 @@ export class MessageHandlers {
         }
       } else {
         // Для остальных баз просто показываем сообщение об успехе
-        await ctx.telegram.editMessageText(
+      await ctx.telegram.editMessageText(
           ctx.chat!.id,
-          response.message_id,
-          undefined,
-          `✅ Сохранил в базу «${dbConfig.title}».`,
-          { parse_mode: 'Markdown' }
-        );
+        response.message_id,
+        undefined,
+        `✅ Сохранил в базу «${dbConfig.title}».`,
+        { parse_mode: 'Markdown' }
+      );
       }
 
       // Сброс режима в idle после успеха
@@ -136,13 +137,13 @@ export class MessageHandlers {
         }
       } else {
         // Для остальных баз просто показываем сообщение об успехе
-        await ctx.telegram.editMessageText(
+      await ctx.telegram.editMessageText(
           ctx.chat!.id,
-          response.message_id,
-          undefined,
-          `✅ Сохранил в базу «${dbConfig.title}».`,
-          { parse_mode: 'Markdown' }
-        );
+        response.message_id,
+        undefined,
+        `✅ Сохранил в базу «${dbConfig.title}».`,
+        { parse_mode: 'Markdown' }
+      );
       }
     } catch (error: any) {
       console.error('Ошибка API Notion:', error);
@@ -162,8 +163,8 @@ export class MessageHandlers {
       if (!pageId) {
         await ctx.reply('❌ Задача не найдена');
         userStateService.clearUserEditMode(ctx.from!.id);
-        return;
-      }
+    return;
+  }
 
       // Показываем индикатор загрузки
       loadingMsg = await ctx.reply('⏳ Обновляю поле...');
@@ -265,7 +266,7 @@ export class MessageHandlers {
         userStateService.setUserDatabase(ctx.from!.id, dbKey);
         const dbConfig = getDatabaseByKey(dbKey);
         const sentMessage = await ctx.reply(
-          `✅ Выбрана база: *${dbConfig.title}*\n\nЧто добавить?`,
+          formatDatabaseSelection(dbConfig.title),
           { parse_mode: 'Markdown', ...keyboardService.getActionsKeyboard(dbKey) }
         );
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
@@ -275,7 +276,7 @@ export class MessageHandlers {
         userStateService.setUserDatabase(ctx.from!.id, dbKey);
         const dbConfig = getDatabaseByKey(dbKey);
         const sentMessage = await ctx.reply(
-          `✅ Выбрана база: *${dbConfig.title}*\n\nЧто добавить?`,
+          formatDatabaseSelection(dbConfig.title),
           { parse_mode: 'Markdown', ...keyboardService.getActionsKeyboard(dbKey) }
         );
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
@@ -284,8 +285,8 @@ export class MessageHandlers {
         const dbKey: NotionDatabaseKey = 'dailyPlan';
         userStateService.setUserDatabase(ctx.from!.id, dbKey);
         const dbConfig = getDatabaseByKey(dbKey);
-        const sentMessage = await ctx.reply(
-          `✅ Выбрана база: *${dbConfig.title}*\n\nЧто добавить?`,
+  const sentMessage = await ctx.reply(
+          formatDatabaseSelection(dbConfig.title),
           { parse_mode: 'Markdown', ...keyboardService.getActionsKeyboard(dbKey) }
         );
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
