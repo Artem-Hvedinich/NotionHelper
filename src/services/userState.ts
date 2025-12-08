@@ -22,6 +22,9 @@ class UserStateService {
   // Хранилище для навигации по спискам задач (для кнопки "Назад")
   private userTaskListStatus = new Map<number, string>(); // userId -> status
 
+  // Хранилище для режима редактирования поля (userId -> { shortId, propertyName, propertyType })
+  private userEditMode = new Map<number, { shortId: string; propertyName: string; propertyType: string }>();
+
   /**
    * Устанавливает выбранную базу данных для пользователя.
    */
@@ -112,6 +115,27 @@ class UserStateService {
    */
   getUserTaskListStatus(userId: number): string | null {
     return this.userTaskListStatus.get(userId) || null;
+  }
+
+  /**
+   * Устанавливает режим редактирования поля для пользователя.
+   */
+  setUserEditMode(userId: number, shortId: string, propertyName: string, propertyType: string): void {
+    this.userEditMode.set(userId, { shortId, propertyName, propertyType });
+  }
+
+  /**
+   * Получает режим редактирования поля для пользователя.
+   */
+  getUserEditMode(userId: number): { shortId: string; propertyName: string; propertyType: string } | null {
+    return this.userEditMode.get(userId) || null;
+  }
+
+  /**
+   * Очищает режим редактирования поля для пользователя.
+   */
+  clearUserEditMode(userId: number): void {
+    this.userEditMode.delete(userId);
   }
 }
 

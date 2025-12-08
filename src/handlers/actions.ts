@@ -1,6 +1,6 @@
 import { Context } from 'telegraf';
 import { getDatabaseByKey, NotionDatabaseKey, DATABASES } from '../config/databases';
-import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus, updateDayRoutineTaskStatus, getDayRoutineTaskInfo, getDayRoutineStatuses, getDayRoutineTaskCheckboxes, updateDayRoutineTaskCheckbox, getDatabaseCheckboxProperties } from '../services/notion';
+import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus, updateDayRoutineTaskStatus, getDayRoutineTaskInfo, getDayRoutineStatuses, getDayRoutineTaskCheckboxes, updateDayRoutineTaskCheckbox, getDatabaseCheckboxProperties, createPageInDatabase, getPageEditableProperties, updatePageProperty } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
 
@@ -31,9 +31,35 @@ export class ActionHandlers {
   if (dbKey === 'morningRoutine') {
       await this.showMorningRoutine(ctx, true);
     } else if (dbKey === 'dayRoutine') {
-      // Для дневной рутины показываем статусы
-      const { commandHandlers } = await import('./commands');
-      await commandHandlers.handleDay(ctx);
+      // Для дневной рутины показываем меню действий
+      const keyboard = keyboardService.getActionsKeyboard(dbKey);
+      
+      // При редактировании сообщения через callback query, исходное сообщение уже должно быть отслежено
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+      }
+      
+      const editedMsg = await ctx.editMessageText(
+        `✅ База изменена: *${dbConfig.title}*\n\nЧто хочешь сделать?`,
+        { 
+          parse_mode: 'Markdown',
+          ...keyboard 
+        }
+      );
+      // editMessageText редактирует существующее сообщение, ID остается тем же
+      if (editedMsg && typeof editedMsg === 'object' && 'message_id' in editedMsg) {
+        const msgId = (editedMsg as any).message_id;
+        if (msgId) {
+          const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+          if (!currentMessages.includes(msgId)) {
+            userStateService.trackBotMessage(ctx.from!.id, msgId);
+          }
+        }
+      }
     } else {
       // Для остальных баз показываем обычное меню действий
       const keyboard = keyboardService.getActionsKeyboard(dbKey);
@@ -312,6 +338,58 @@ export class ActionHandlers {
   }
 
   /**
+   * Обработчик открытия задачи после создания.
+   * Отправляет новое сообщение с задачей.
+   */
+  async handleDayTaskOpenAfterCreate(ctx: Context, shortId: string): Promise<void> {
+    try {
+      // Получаем полный pageId по короткому ID
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.reply('❌ Задача не найдена');
+        return;
+      }
+
+      // Получаем информацию о задаче
+      const task = await getDayRoutineTaskInfo(pageId);
+      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
+      const editableProperties = await getPageEditableProperties(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
+      
+      // Формируем сообщение с информацией о задаче
+      let message = `✅ Задача создана!\n\n📌 ${task.title}\n\nСтатус: ${task.status}`;
+      
+      // Добавляем информацию о других полях (кроме статуса, title и чекбоксов)
+      if (editableProperties && editableProperties.length > 0) {
+        const statusPropertyName = await this.findStatusPropertyName(pageId);
+        const otherProps = editableProperties.filter(p => 
+          p.type !== 'checkbox' && 
+          p.type !== 'title' && 
+          p.name !== statusPropertyName && 
+          p.value
+        );
+        if (otherProps.length > 0) {
+          message += '\n\n';
+          otherProps.forEach(prop => {
+            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
+            message += `${prop.name}: ${valueDisplay}\n`;
+          });
+        }
+      }
+      
+      // Отправляем новое сообщение
+      const sentMessage = await ctx.reply(message, {
+        ...keyboard
+      });
+      userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    } catch (error: any) {
+      console.error('Error opening task after create:', error);
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
    * Обработчик открытия задачи из списка.
    */
   async handleDayTaskOpen(ctx: Context, shortId: string): Promise<void> {
@@ -328,10 +406,29 @@ export class ActionHandlers {
       // Получаем информацию о задаче
       const task = await getDayRoutineTaskInfo(pageId);
       const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
-      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
+      const editableProperties = await getPageEditableProperties(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
       
-      // Используем простой текст без Markdown
-      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
+      // Формируем сообщение с информацией о задаче
+      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
+      
+      // Добавляем информацию о других полях (кроме статуса, title и чекбоксов)
+      if (editableProperties && editableProperties.length > 0) {
+        const statusPropertyName = await this.findStatusPropertyName(pageId);
+        const otherProps = editableProperties.filter(p => 
+          p.type !== 'checkbox' && 
+          p.type !== 'title' && 
+          p.name !== statusPropertyName && 
+          p.value
+        );
+        if (otherProps.length > 0) {
+          message += '\n\n';
+          otherProps.forEach(prop => {
+            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
+            message += `${prop.name}: ${valueDisplay}\n`;
+          });
+        }
+      }
       
       // Редактируем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -400,6 +497,45 @@ export class ActionHandlers {
   }
 
   /**
+   * Обработчик добавления задачи в дневную рутину.
+   */
+  async handleDayAddTask(ctx: Context): Promise<void> {
+    try {
+      const dbKey: NotionDatabaseKey = 'dayRoutine';
+      const dbConfig = getDatabaseByKey(dbKey);
+      
+      // Установка режима создания для пользователя
+      userStateService.setUserDatabase(ctx.from!.id, dbKey);
+      userStateService.setUserMode(ctx.from!.id, 'create', dbKey);
+      
+      await ctx.answerCbQuery();
+      
+      // Редактируем сообщение или отправляем новое
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(
+          `✍️ Напиши текст задачи, я сохраню её в базу «${dbConfig.title}»:`
+        );
+    } else {
+        const sentMessage = await ctx.reply(
+          `✍️ Напиши текст задачи, я сохраню её в базу «${dbConfig.title}»:`
+        );
+        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+      }
+    } catch (error: any) {
+      console.error('Error handling day add task:', error);
+      await ctx.answerCbQuery('Ошибка');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
    * Обработчик изменения статуса задачи дневной рутины.
    */
   async handleDayTaskStatusChange(ctx: Context, shortId: string, newStatusShort: string): Promise<void> {
@@ -421,10 +557,24 @@ export class ActionHandlers {
       // Получаем обновленную информацию о задаче
       const task = await getDayRoutineTaskInfo(pageId);
       const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
-      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
+      const editableProperties = await getPageEditableProperties(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
       
-      // Используем простой текст без Markdown
-      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
+      // Формируем сообщение с информацией о задаче
+      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
+      
+      // Добавляем информацию о других полях (кроме статуса)
+      if (editableProperties && editableProperties.length > 0) {
+        const statusPropertyName = await this.findStatusPropertyName(pageId);
+        const otherProps = editableProperties.filter(p => p.type !== 'checkbox' && p.name !== statusPropertyName && p.value);
+        if (otherProps.length > 0) {
+          message += '\n\n';
+          otherProps.forEach(prop => {
+            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
+            message += `${prop.name}: ${valueDisplay}\n`;
+          });
+        }
+      }
       
       // Обновляем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
@@ -695,6 +845,220 @@ export class ActionHandlers {
     } else {
       const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    }
+  }
+
+  /**
+   * Вспомогательная функция для поиска названия поля статуса.
+   */
+  private async findStatusPropertyName(pageId: string): Promise<string | null> {
+    try {
+      const { DATABASES } = await import('../config/databases');
+      const dbConfig = DATABASES.dayRoutine;
+      // Используем прямой вызов функции из notion.ts
+      const notionModule = await import('../services/notion');
+      // findStatusProperty не экспортируется, используем другой подход
+      // Получаем схему базы данных напрямую
+      const { Client } = await import('@notionhq/client');
+      const notion = new Client({ auth: process.env.NOTION_API_KEY });
+      const response = await notion.databases.retrieve({ database_id: dbConfig.id });
+      
+      for (const [propName, prop] of Object.entries(response.properties)) {
+        // @ts-ignore
+        if (prop.type === 'select' || prop.type === 'status') {
+          const nameLower = propName.toLowerCase();
+          if (nameLower.includes('статус') || nameLower.includes('status') || propName.includes('🔄') || propName.includes('⌚')) {
+            return propName;
+          }
+        }
+      }
+      
+      // Если не нашли по названию, возвращаем первое поле типа select или status
+      for (const [propName, prop] of Object.entries(response.properties)) {
+        // @ts-ignore
+        if (prop.type === 'select' || prop.type === 'status') {
+          return propName;
+        }
+      }
+      
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Обработчик начала редактирования поля задачи.
+   */
+  async handleDayTaskEditProperty(ctx: Context, shortId: string, propertyNameShort: string, propertyTypeShort: string): Promise<void> {
+    try {
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.answerCbQuery('❌ Задача не найдена');
+        return;
+      }
+
+      // Получаем полные названия свойств
+      const editableProperties = await getPageEditableProperties(pageId);
+      const property = editableProperties.find(p => p.name.startsWith(propertyNameShort));
+      
+      if (!property) {
+        await ctx.answerCbQuery('❌ Поле не найдено');
+        return;
+      }
+
+      // Если это select или status, показываем кнопки выбора
+      if (property.type === 'select' || property.type === 'status') {
+        if (property.options && property.options.length > 0) {
+          const keyboard = keyboardService.getPropertyOptionsKeyboard(shortId, property.name, property.type, property.options, property.value);
+          const message = `Выбери новое значение для поля "${property.name}":\n\nТекущее: ${property.value || 'не установлено'}`;
+          
+          await ctx.answerCbQuery();
+          if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+            await ctx.editMessageText(message, keyboard);
+          } else {
+            const sentMessage = await ctx.reply(message, keyboard);
+            userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+          }
+        } else {
+          await ctx.answerCbQuery('❌ Нет доступных опций');
+        }
+      } else if (property.type === 'checkbox') {
+        // Для чекбокса просто переключаем значение
+        const newValue = property.value !== 'true';
+        await updatePageProperty(pageId, property.name, property.type, newValue);
+        
+        // Обновляем задачу
+        await this.refreshDayTask(ctx, shortId);
+        await ctx.answerCbQuery(newValue ? `✅ ${property.name} отмечено` : `⬜ ${property.name} снято`);
+      } else {
+        // Для остальных типов полей устанавливаем режим редактирования
+        userStateService.setUserEditMode(ctx.from!.id, shortId, property.name, property.type);
+        
+        let promptMessage = `✍️ Введи новое значение для поля "${property.name}":\n\n`;
+        promptMessage += `Текущее: ${property.value || 'не установлено'}\n\n`;
+        
+        if (property.type === 'number') {
+          promptMessage += 'Введи число:';
+        } else if (property.type === 'date') {
+          promptMessage += 'Введи дату в формате YYYY-MM-DD:';
+        } else if (property.type === 'url') {
+          promptMessage += 'Введи URL:';
+        } else if (property.type === 'email') {
+          promptMessage += 'Введи email:';
+        } else if (property.type === 'phone_number') {
+          promptMessage += 'Введи номер телефона:';
+        } else {
+          promptMessage += 'Введи текст:';
+        }
+        
+        await ctx.answerCbQuery();
+        const sentMessage = await ctx.reply(promptMessage);
+        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+      }
+    } catch (error: any) {
+      console.error('Error editing property:', error);
+      await ctx.answerCbQuery('Ошибка');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик выбора значения для select/status поля.
+   */
+  async handleDayTaskPropertyOption(ctx: Context, shortId: string, propertyNameShort: string, propertyTypeShort: string, optionShort: string): Promise<void> {
+    try {
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.answerCbQuery('❌ Задача не найдена');
+        return;
+      }
+
+      // Получаем полные названия свойств
+      const editableProperties = await getPageEditableProperties(pageId);
+      const property = editableProperties.find(p => p.name.startsWith(propertyNameShort));
+      
+      if (!property || !property.options) {
+        await ctx.answerCbQuery('❌ Поле не найдено');
+        return;
+      }
+
+      // Находим полное название опции
+      const option = property.options.find(opt => opt.startsWith(optionShort));
+      if (!option) {
+        await ctx.answerCbQuery('❌ Опция не найдена');
+        return;
+      }
+
+      await ctx.answerCbQuery('Обновляю...');
+      await updatePageProperty(pageId, property.name, property.type, option);
+      
+      // Обновляем задачу
+      await this.refreshDayTask(ctx, shortId);
+      await ctx.answerCbQuery(`✅ ${property.name} изменено на "${option}"`);
+    } catch (error: any) {
+      console.error('Error updating property option:', error);
+      await ctx.answerCbQuery('Ошибка обновления');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик отмены редактирования поля.
+   */
+  async handleDayTaskCancelEdit(ctx: Context, shortId: string): Promise<void> {
+    userStateService.clearUserEditMode(ctx.from!.id);
+    await ctx.answerCbQuery('❌ Отменено');
+    await this.refreshDayTask(ctx, shortId);
+  }
+
+  /**
+   * Вспомогательная функция для обновления отображения задачи.
+   */
+  async refreshDayTask(ctx: Context, shortId: string): Promise<void> {
+    try {
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        return;
+      }
+
+      const task = await getDayRoutineTaskInfo(pageId);
+      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
+      const editableProperties = await getPageEditableProperties(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
+      
+      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
+      
+      if (editableProperties && editableProperties.length > 0) {
+        const statusPropertyName = await this.findStatusPropertyName(pageId);
+        const otherProps = editableProperties.filter(p => 
+          p.type !== 'checkbox' && 
+          p.type !== 'title' && 
+          p.name !== statusPropertyName && 
+          p.value
+        );
+        if (otherProps.length > 0) {
+          message += '\n\n';
+          otherProps.forEach(prop => {
+            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
+            message += `${prop.name}: ${valueDisplay}\n`;
+          });
+        }
+      }
+
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(message, keyboard);
+      }
+  } catch (error: any) {
+      console.error('Error refreshing task:', error);
     }
   }
 }

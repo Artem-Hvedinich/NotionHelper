@@ -1,9 +1,10 @@
 import { Context } from 'telegraf';
 import { getDatabaseByKey, NotionDatabaseKey } from '../config/databases';
-import { createPageInDatabase } from '../services/notion';
+import { createPageInDatabase, updatePageProperty } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
 import { commandHandlers } from './commands';
+import { actionHandlers } from './actions';
 
 /**
  * Обработчики текстовых сообщений от пользователей.
@@ -26,6 +27,13 @@ export class MessageHandlers {
     
     // Обработка кнопок главного меню
     if (await this.handleMainMenuButtons(ctx, text)) {
+      return;
+    }
+    
+    // Проверка режима редактирования поля
+    const editMode = userStateService.getUserEditMode(userId);
+    if (editMode) {
+      await this.handleEditPropertyMode(ctx, editMode, text);
       return;
     }
     
@@ -62,15 +70,30 @@ export class MessageHandlers {
       const response = await ctx.reply(`⏳ Сохраняю в *${dbConfig.title}*...`, { parse_mode: 'Markdown' });
       userStateService.trackBotMessage(ctx.from!.id, response.message_id);
       
-      await createPageInDatabase({ databaseKey: dbKey as any, text });
+      const pageId = await createPageInDatabase({ databaseKey: dbKey as any, text });
 
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id,
-        response.message_id,
-        undefined,
-        `✅ Сохранил в базу «${dbConfig.title}».`,
-        { parse_mode: 'Markdown' }
-      );
+      // Если это дневная рутина, открываем задачу для редактирования
+      if (dbKey === 'dayRoutine') {
+        // Удаляем сообщение "Сохраняю..."
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, response.message_id);
+        } catch (error: any) {
+          // Игнорируем ошибки удаления
+        }
+        
+        // Открываем задачу для редактирования
+        const shortId = userStateService.registerTaskId(pageId);
+        await actionHandlers.handleDayTaskOpenAfterCreate(ctx, shortId);
+      } else {
+        // Для остальных баз просто показываем сообщение об успехе
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          response.message_id,
+          undefined,
+          `✅ Сохранил в базу «${dbConfig.title}».`,
+          { parse_mode: 'Markdown' }
+        );
+      }
 
       // Сброс режима в idle после успеха
       userStateService.setUserMode(ctx.from!.id, 'idle');
@@ -89,18 +112,89 @@ export class MessageHandlers {
     try {
       const response = await ctx.reply(`⏳ Сохраняю в *${dbConfig.title}*...`, { parse_mode: 'Markdown' });
       userStateService.trackBotMessage(ctx.from!.id, response.message_id);
-      await createPageInDatabase({ databaseKey: dbKey as any, text });
-      await ctx.telegram.editMessageText(
-        ctx.chat!.id,
-        response.message_id,
-        undefined,
-        `✅ Сохранил в базу «${dbConfig.title}».`,
-        { parse_mode: 'Markdown' }
-      );
+      const pageId = await createPageInDatabase({ databaseKey: dbKey as any, text });
+      
+      // Если это дневная рутина, открываем задачу для редактирования
+      if (dbKey === 'dayRoutine') {
+        // Удаляем сообщение "Сохраняю..."
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, response.message_id);
+        } catch (error: any) {
+          // Игнорируем ошибки удаления
+        }
+        
+        // Открываем задачу для редактирования
+        const shortId = userStateService.registerTaskId(pageId);
+        await actionHandlers.handleDayTaskOpenAfterCreate(ctx, shortId);
+      } else {
+        // Для остальных баз просто показываем сообщение об успехе
+        await ctx.telegram.editMessageText(
+          ctx.chat!.id,
+          response.message_id,
+          undefined,
+          `✅ Сохранил в базу «${dbConfig.title}».`,
+          { parse_mode: 'Markdown' }
+        );
+      }
     } catch (error: any) {
       console.error('Ошибка API Notion:', error);
       const errorMsg = await ctx.reply(`❌ Не удалось сохранить задачу. Попробуй позже.\nDebug: ${error.message || 'Unknown error'}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обрабатывает режим редактирования поля задачи.
+   */
+  private async handleEditPropertyMode(ctx: Context, editMode: { shortId: string; propertyName: string; propertyType: string }, text: string): Promise<void> {
+    try {
+      const pageId = userStateService.getTaskPageId(editMode.shortId);
+      
+      if (!pageId) {
+        await ctx.reply('❌ Задача не найдена');
+        userStateService.clearUserEditMode(ctx.from!.id);
+        return;
+      }
+
+      // Парсим значение в зависимости от типа поля
+      let value: string | number | boolean | { start: string } | null = text.trim();
+      
+      if (editMode.propertyType === 'number') {
+        const numValue = parseFloat(text);
+        if (isNaN(numValue)) {
+          await ctx.reply('❌ Неверный формат числа. Попробуй еще раз:');
+          return;
+        }
+        value = numValue;
+      } else if (editMode.propertyType === 'date') {
+        // Проверяем формат даты YYYY-MM-DD
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(text)) {
+          await ctx.reply('❌ Неверный формат даты. Используй формат YYYY-MM-DD (например, 2024-12-25):');
+          return;
+        }
+        value = { start: text };
+      } else if (editMode.propertyType === 'checkbox') {
+        value = text.toLowerCase() === 'true' || text.toLowerCase() === '1' || text.toLowerCase() === 'да';
+      } else if (text.toLowerCase() === 'null' || text.toLowerCase() === 'удалить' || text.toLowerCase() === 'очистить') {
+        value = null;
+      }
+
+      // Обновляем поле
+      await updatePageProperty(pageId, editMode.propertyName, editMode.propertyType, value);
+      
+      // Очищаем режим редактирования
+      userStateService.clearUserEditMode(ctx.from!.id);
+      
+      // Обновляем задачу через actionHandlers
+      const { actionHandlers } = await import('./actions');
+      await actionHandlers.refreshDayTask(ctx, editMode.shortId);
+      
+      await ctx.reply(`✅ Поле "${editMode.propertyName}" обновлено`);
+    } catch (error: any) {
+      console.error('Error updating property:', error);
+      await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.clearUserEditMode(ctx.from!.id);
     }
   }
 

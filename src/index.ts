@@ -98,6 +98,34 @@ bot.action(/^day_back_statuses$/, async (ctx) => {
   await actionHandlers.handleDayBackToStatuses(ctx);
 });
 
+// Обработка добавления задачи в дневную рутину
+bot.action(/^day_add_task$/, async (ctx) => {
+  await actionHandlers.handleDayAddTask(ctx);
+});
+
+// Обработка редактирования поля задачи (de = day edit)
+bot.action(/^de:(.+):(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const propertyName = ctx.match[2];
+  const propertyType = ctx.match[3];
+  await actionHandlers.handleDayTaskEditProperty(ctx, shortId, propertyName, propertyType);
+});
+
+// Обработка выбора значения для select/status поля (dp = day property)
+bot.action(/^dp:(.+):(.+):(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const propertyName = ctx.match[2];
+  const propertyType = ctx.match[3];
+  const option = ctx.match[4];
+  await actionHandlers.handleDayTaskPropertyOption(ctx, shortId, propertyName, propertyType, option);
+});
+
+// Обработка отмены редактирования поля (dcancel = day cancel)
+bot.action(/^dcancel:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleDayTaskCancelEdit(ctx, shortId);
+});
+
 // --- Регистрация обработчиков сообщений ---
 
 bot.on('text', (ctx) => messageHandlers.handleText(ctx));

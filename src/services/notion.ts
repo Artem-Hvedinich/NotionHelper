@@ -1,5 +1,6 @@
 import { Client as NotionClient } from '@notionhq/client';
 import { NotionDatabaseKey, getDatabaseByKey, DATABASES } from '../config/databases';
+import { DayRoutineTask } from '../types';
 
 if (!process.env.NOTION_API_KEY) {
   console.error('❌ Missing NOTION_API_KEY in .env');
@@ -121,26 +122,33 @@ export async function getDayRoutineTasksDynamic(): Promise<{ propertyName: strin
 export async function createPageInDatabase(params: {
   databaseKey: NotionDatabaseKey;
   text: string;
-}): Promise<void> {
+}): Promise<string> {
   const { databaseKey, text } = params;
   const dbConfig = getDatabaseByKey(databaseKey);
   
-  // Основные свойства
-  const titlePropName = dbConfig.propName || 'Name'; // По умолчанию Name
+  // Динамически находим поле заголовка
+  let titlePropName: string;
+  
+  if (databaseKey === 'habits') {
+      // Для Привычек используем "Название"
+      titlePropName = 'Название';
+  } else {
+      // Для остальных баз динамически находим поле title
+      const foundTitleProp = await findTitleProperty(dbConfig.id);
+      if (foundTitleProp) {
+          titlePropName = foundTitleProp;
+      } else {
+          // Fallback: используем propName из конфига или 'Name'
+          titlePropName = dbConfig.propName || 'Name';
+      }
+  }
+  
   const properties: Record<string, any> = {};
 
   // Свойство заголовка
-  if (databaseKey === 'habits') {
-      // Для Привычек используется "Название"
-      properties['Название'] = {
-          title: [{ text: { content: text } }],
-      };
-  } else {
-      // Для остальных используется "Name" (или из конфига)
-      properties[titlePropName] = {
-          title: [{ text: { content: text } }],
-      };
-  }
+  properties[titlePropName] = {
+      title: [{ text: { content: text } }],
+  };
 
   // Специфичная логика для каждого типа базы
   switch (databaseKey) {
@@ -158,15 +166,67 @@ export async function createPageInDatabase(params: {
       break;
       
     case 'dayRoutine':
+      // Для дневной рутины устанавливаем статус по умолчанию (если есть)
+      // Находим поле статуса и устанавливаем первый доступный статус или "В ожидании"
+      try {
+        const statusPropertyName = await findStatusProperty(dbConfig.id);
+        if (statusPropertyName) {
+          const dbSchema = await notion.databases.retrieve({ database_id: dbConfig.id });
+          const statusProp = dbSchema.properties[statusPropertyName];
+          // @ts-ignore
+          const statusPropType = statusProp?.type;
+          
+          // Пытаемся найти статус "В ожидании" или берем первый доступный
+          let defaultStatus: string | null = null;
+          // @ts-ignore
+          if (statusPropType === 'select' && statusProp.select?.options) {
+            // @ts-ignore
+            const options = statusProp.select.options;
+            // Ищем "В ожидании" или похожий
+            const pendingStatus = options.find((opt: any) => {
+              const name = opt.name.toLowerCase();
+              return name.includes('ожидани') || name.includes('pending') || name.includes('waiting');
+            });
+            defaultStatus = pendingStatus ? pendingStatus.name : (options[0]?.name || null);
+          } else if (statusPropType === 'status' && statusProp.status?.options) {
+            // @ts-ignore
+            const options = statusProp.status.options;
+            const pendingStatus = options.find((opt: any) => {
+              const name = opt.name.toLowerCase();
+              return name.includes('ожидани') || name.includes('pending') || name.includes('waiting');
+            });
+            defaultStatus = pendingStatus ? pendingStatus.name : (options[0]?.name || null);
+          }
+          
+          if (defaultStatus) {
+            if (statusPropType === 'select') {
+              properties[statusPropertyName] = {
+                select: { name: defaultStatus }
+              };
+            } else if (statusPropType === 'status') {
+              properties[statusPropertyName] = {
+                status: { name: defaultStatus }
+              };
+            }
+          }
+        }
+      } catch (error: any) {
+        console.error('Error setting default status for dayRoutine:', error);
+        // Продолжаем создание без статуса, если не удалось установить
+      }
+      break;
+      
     case 'eveningRoutine':
     case 'habits':
        break;
   }
 
-  await notion.pages.create({
+  const newPage = await notion.pages.create({
     parent: { database_id: dbConfig.id },
     properties: properties,
   });
+  
+  return newPage.id;
 }
 
 export async function listTodayDailyPlan(): Promise<string> {
@@ -659,7 +719,7 @@ async function findTitleProperty(databaseId: string): Promise<string | null> {
  * Находит поле статуса в базе данных динамически.
  * Ищет поле типа 'select' с названиями, содержащими "Статус", "Status" или эмодзи статуса.
  */
-async function findStatusProperty(databaseId: string): Promise<string | null> {
+export async function findStatusProperty(databaseId: string): Promise<string | null> {
     try {
         const response = await notion.databases.retrieve({ database_id: databaseId });
         
@@ -726,13 +786,6 @@ export async function getDayRoutineStatuses(): Promise<string[]> {
 /**
  * Интерфейс для задачи дневной рутины.
  */
-export interface DayRoutineTask {
-    pageId: string;
-    title: string;
-    status: string;
-    lastEditedTime: string;
-}
-
 /**
  * Получает задачи дневной рутины по статусу.
  * Если статус "Готово" (или похожий), фильтрует по Last edited time = сегодня.
@@ -1053,5 +1106,245 @@ export async function getDayRoutineTaskInfo(pageId: string): Promise<DayRoutineT
     } catch (error: any) {
         console.error('Error fetching task info:', error);
         throw new Error(`Не удалось получить информацию о задаче: ${error.message}`);
+    }
+}
+
+/**
+ * Получает все редактируемые свойства страницы (исключая formula, rollup, title).
+ * Возвращает массив свойств с их типами и текущими значениями.
+ */
+export async function getPageEditableProperties(pageId: string): Promise<Array<{
+    name: string;
+    type: string;
+    value: string;
+    options?: string[]; // Для select/status - список доступных опций
+}>> {
+    try {
+        const page = await notion.pages.retrieve({ page_id: pageId });
+        if (!('properties' in page)) {
+            return [];
+        }
+
+        // Получаем схему базы данных для получения опций select/status
+        const dbId = (page as any).parent?.database_id;
+        let dbSchema: any = null;
+        if (dbId) {
+            try {
+                dbSchema = await notion.databases.retrieve({ database_id: dbId });
+            } catch (error) {
+                console.warn('Could not retrieve database schema:', error);
+            }
+        }
+
+        const result: Array<{
+            name: string;
+            type: string;
+            value: string;
+            options?: string[];
+        }> = [];
+
+        const propertyOrder = Object.keys(page.properties);
+
+        for (const propKey of propertyOrder) {
+            const prop = page.properties[propKey];
+            // @ts-ignore
+            const propType = prop?.type;
+
+            // Пропускаем нередактируемые типы (но оставляем title для редактирования)
+            if (propType === 'formula' || propType === 'rollup' || propType === 'created_time' || propType === 'created_by' || propType === 'last_edited_time' || propType === 'last_edited_by') {
+                continue;
+            }
+
+            let value = '';
+            let options: string[] | undefined = undefined;
+
+            // @ts-ignore
+            switch (propType) {
+                case 'title':
+                    // @ts-ignore
+                    value = prop.title?.[0]?.plain_text || '';
+                    break;
+
+                case 'rich_text':
+                    // @ts-ignore
+                    value = prop.rich_text?.[0]?.plain_text || '';
+                    break;
+
+                case 'number':
+                    // @ts-ignore
+                    const numValue = prop.number;
+                    if (numValue !== null && numValue !== undefined) {
+                        value = String(numValue);
+                    }
+                    break;
+
+                case 'select':
+                    // @ts-ignore
+                    value = prop.select?.name || '';
+                    // Получаем опции из схемы базы данных
+                    if (dbSchema && dbSchema.properties[propKey]) {
+                        // @ts-ignore
+                        const selectProp = dbSchema.properties[propKey];
+                        // @ts-ignore
+                        if (selectProp.type === 'select' && selectProp.select?.options) {
+                            // @ts-ignore
+                            options = selectProp.select.options.map((opt: any) => opt.name);
+                        }
+                    }
+                    break;
+
+                case 'status':
+                    // @ts-ignore
+                    value = prop.status?.name || '';
+                    // Получаем опции из схемы базы данных
+                    if (dbSchema && dbSchema.properties[propKey]) {
+                        // @ts-ignore
+                        const statusProp = dbSchema.properties[propKey];
+                        // @ts-ignore
+                        if (statusProp.type === 'status' && statusProp.status?.options) {
+                            // @ts-ignore
+                            options = statusProp.status.options.map((opt: any) => opt.name);
+                        }
+                    }
+                    break;
+
+                case 'date':
+                    // @ts-ignore
+                    const dateValue = prop.date;
+                    if (dateValue?.start) {
+                        value = dateValue.start;
+                    }
+                    break;
+
+                case 'checkbox':
+                    // @ts-ignore
+                    value = prop.checkbox ? 'true' : 'false';
+                    break;
+
+                case 'url':
+                    // @ts-ignore
+                    value = prop.url || '';
+                    break;
+
+                case 'email':
+                    // @ts-ignore
+                    value = prop.email || '';
+                    break;
+
+                case 'phone_number':
+                    // @ts-ignore
+                    value = prop.phone_number || '';
+                    break;
+            }
+
+            result.push({
+                name: propKey,
+                type: propType,
+                value: value,
+                options: options
+            });
+        }
+
+        return result;
+    } catch (error: any) {
+        console.error('Error fetching editable properties:', error);
+        throw new Error(`Не удалось получить свойства страницы: ${error.message}`);
+    }
+}
+
+/**
+ * Универсальная функция для обновления любого свойства страницы.
+ */
+export async function updatePageProperty(
+    pageId: string,
+    propertyName: string,
+    propertyType: string,
+    value: string | number | boolean | { start: string; end?: string } | null
+): Promise<void> {
+    try {
+        const updateProperties: Record<string, any> = {};
+
+        switch (propertyType) {
+            case 'title':
+                updateProperties[propertyName] = {
+                    title: value ? [{ text: { content: String(value) } }] : []
+                };
+                break;
+
+            case 'rich_text':
+                updateProperties[propertyName] = {
+                    rich_text: value ? [{ text: { content: String(value) } }] : []
+                };
+                break;
+
+            case 'number':
+                updateProperties[propertyName] = {
+                    number: value === null || value === '' ? null : Number(value)
+                };
+                break;
+
+            case 'select':
+                updateProperties[propertyName] = {
+                    select: value ? { name: String(value) } : null
+                };
+                break;
+
+            case 'status':
+                updateProperties[propertyName] = {
+                    status: value ? { name: String(value) } : null
+                };
+                break;
+
+            case 'date':
+                if (value && typeof value === 'object' && 'start' in value) {
+                    updateProperties[propertyName] = {
+                        date: value
+                    };
+                } else if (value) {
+                    updateProperties[propertyName] = {
+                        date: { start: String(value) }
+                    };
+                } else {
+                    updateProperties[propertyName] = {
+                        date: null
+                    };
+                }
+                break;
+
+            case 'checkbox':
+                updateProperties[propertyName] = {
+                    checkbox: Boolean(value)
+                };
+                break;
+
+            case 'url':
+                updateProperties[propertyName] = {
+                    url: value ? String(value) : null
+                };
+                break;
+
+            case 'email':
+                updateProperties[propertyName] = {
+                    email: value ? String(value) : null
+                };
+                break;
+
+            case 'phone_number':
+                updateProperties[propertyName] = {
+                    phone_number: value ? String(value) : null
+                };
+                break;
+
+            default:
+                throw new Error(`Неподдерживаемый тип поля: ${propertyType}`);
+        }
+
+        await notion.pages.update({
+            page_id: pageId,
+            properties: updateProperties
+        });
+    } catch (error: any) {
+        console.error('Error updating page property:', error);
+        throw new Error(`Не удалось обновить поле: ${error.message}`);
     }
 }

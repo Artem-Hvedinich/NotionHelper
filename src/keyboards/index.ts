@@ -1,7 +1,7 @@
 import { Markup } from 'telegraf';
 import { DATABASES, NotionDatabaseKey } from '../config/databases';
-import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses, DayRoutineTask } from '../services/notion';
-import { MorningTask } from '../types';
+import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses, getPageEditableProperties } from '../services/notion';
+import { MorningTask, DayRoutineTask } from '../types';
 import { userStateService } from '../services/userState';
 
 /**
@@ -97,6 +97,9 @@ export class KeyboardService {
       Markup.button.callback(status, `day_status:${status}`)
     );
     
+    // Добавляем кнопку "Добавить задачу"
+    buttons.push(Markup.button.callback('➕ Добавить задачу', 'day_add_task'));
+    
     return Markup.inlineKeyboard(buttons, { columns: 2 });
   }
 
@@ -120,7 +123,7 @@ export class KeyboardService {
   /**
    * Генерирует клавиатуру для управления задачей дневной рутины.
    */
-  async getDayRoutineTaskKeyboard(task: DayRoutineTask, checkboxes?: Array<{ propertyName: string; label: string; checked: boolean }>) {
+  async getDayRoutineTaskKeyboard(task: DayRoutineTask, checkboxes?: Array<{ propertyName: string; label: string; checked: boolean }>, editableProperties?: Array<{ name: string; type: string; value: string; options?: string[] }>) {
     const statuses = await getDayRoutineStatuses();
     
     // Используем короткий ID вместо полного pageId для callback_data
@@ -142,6 +145,46 @@ export class KeyboardService {
       
       // Добавляем чекбоксы по одному в ряд
       checkboxButtons.forEach(btn => buttons.push([btn]));
+    }
+    
+    // Добавляем кнопки для редактирования всех полей (кроме чекбоксов и статуса)
+    if (editableProperties && editableProperties.length > 0) {
+      // Пропускаем статус, так как он уже обрабатывается отдельно
+      const statusPropertyName = await this.findStatusPropertyName(task.pageId);
+      
+      // Сначала добавляем title (если есть), затем остальные поля
+      const titleProp = editableProperties.find(p => p.type === 'title');
+      if (titleProp) {
+        let buttonText = `✏️ ${titleProp.name}`;
+        if (titleProp.value) {
+          const valueDisplay = titleProp.value.length > 15 ? titleProp.value.substring(0, 12) + '...' : titleProp.value;
+          buttonText += `: ${valueDisplay}`;
+        }
+        const propNameShort = titleProp.name.length > 25 ? titleProp.name.substring(0, 25) : titleProp.name;
+        const propTypeShort = titleProp.type.length > 10 ? titleProp.type.substring(0, 10) : titleProp.type;
+        buttons.push([Markup.button.callback(buttonText, `de:${shortId}:${propNameShort}:${propTypeShort}`)]);
+      }
+      
+      // Затем добавляем остальные поля (кроме title, checkbox и status)
+      editableProperties.forEach(prop => {
+        // Пропускаем статус (он обрабатывается отдельно), чекбоксы и title (уже добавлен)
+        if (prop.type === 'checkbox' || prop.type === 'title' || prop.name === statusPropertyName) {
+          return;
+        }
+        
+        // Формируем текст кнопки с текущим значением
+        let buttonText = `✏️ ${prop.name}`;
+        if (prop.value) {
+          const valueDisplay = prop.value.length > 15 ? prop.value.substring(0, 12) + '...' : prop.value;
+          buttonText += `: ${valueDisplay}`;
+        }
+        
+        // Обрезаем название свойства для callback_data
+        const propNameShort = prop.name.length > 25 ? prop.name.substring(0, 25) : prop.name;
+        const propTypeShort = prop.type.length > 10 ? prop.type.substring(0, 10) : prop.type;
+        
+        buttons.push([Markup.button.callback(buttonText, `de:${shortId}:${propNameShort}:${propTypeShort}`)]);
+      });
     }
     
     // Кнопки для изменения статуса (только другие статусы, не текущий)
@@ -172,6 +215,45 @@ export class KeyboardService {
     // Добавляем кнопку "Назад к списку" (используем сохраненный статус из userState)
     const backButton = Markup.button.callback('◀️ Назад к списку', `dbl:${shortId}`);
     buttons.push([backButton]);
+    
+    return Markup.inlineKeyboard(buttons);
+  }
+
+  /**
+   * Вспомогательная функция для поиска названия поля статуса.
+   */
+  private async findStatusPropertyName(pageId: string): Promise<string | null> {
+    try {
+      const { findStatusProperty } = await import('../services/notion');
+      const dbConfig = DATABASES.dayRoutine;
+      return await findStatusProperty(dbConfig.id);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Генерирует клавиатуру для выбора значения select/status поля.
+   */
+  getPropertyOptionsKeyboard(shortId: string, propertyName: string, propertyType: string, options: string[], currentValue?: string): any {
+    const buttons: any[] = [];
+    
+    // Обрезаем название свойства для callback_data
+    const propNameShort = propertyName.length > 25 ? propertyName.substring(0, 25) : propertyName;
+    
+    options.forEach(option => {
+      const isSelected = option === currentValue;
+      const icon = isSelected ? '✅' : '⬜';
+      // Обрезаем опцию для callback_data
+      const optionShort = option.length > 20 ? option.substring(0, 20) : option;
+      buttons.push([Markup.button.callback(
+        `${icon} ${option}`,
+        `dp:${shortId}:${propNameShort}:${propertyType}:${optionShort}`
+      )]);
+    });
+    
+    // Кнопка "Отмена"
+    buttons.push([Markup.button.callback('❌ Отмена', `dcancel:${shortId}`)]);
     
     return Markup.inlineKeyboard(buttons);
   }

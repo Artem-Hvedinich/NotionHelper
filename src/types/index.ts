@@ -25,3 +25,13 @@ export interface MorningTask {
   label: string;
 }
 
+/**
+ * Задача дневной рутины.
+ */
+export interface DayRoutineTask {
+  pageId: string;
+  title: string;
+  status: string;
+  lastEditedTime: string;
+}
+
