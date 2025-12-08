@@ -112,6 +112,14 @@ export class CommandHandlers {
       { parse_mode: 'Markdown', ...keyboardService.getMainMenuKeyboard() }
     );
     
+    // Закрепляем сообщение с главным меню, чтобы оно всегда было видно
+    try {
+      await ctx.telegram.pinChatMessage(chatId, sentMessage.message_id, { disable_notification: true });
+    } catch (error: any) {
+      // Игнорируем ошибки закрепления (например, если сообщение уже закреплено)
+      console.log(`[DEBUG] Could not pin message: ${error.message}`);
+    }
+    
     // Сохраняем ID нового сообщения с главным меню
     userStateService.setMainMenuMessage(userId, sentMessage.message_id);
     userStateService.trackBotMessage(userId, sentMessage.message_id);
@@ -124,10 +132,41 @@ export class CommandHandlers {
    */
   async handleMenu(ctx: Context): Promise<void> {
     const userId = ctx.from!.id;
+    const chatId = ctx.chat!.id;
+    
+    // Проверяем, есть ли уже закрепленное сообщение с главным меню
+    const existingMainMenuId = userStateService.getMainMenuMessage(userId);
+    
+    if (existingMainMenuId) {
+      // Если главное меню уже существует, обновляем его
+      try {
+        await ctx.telegram.editMessageText(
+          chatId,
+          existingMainMenuId,
+          undefined,
+          formatMainMenu(),
+          { parse_mode: 'Markdown', ...keyboardService.getMainMenuKeyboard() }
+        );
+        return;
+      } catch (error: any) {
+        // Если не удалось обновить (сообщение удалено), создаем новое
+        console.log(`[DEBUG] Could not update main menu: ${error.message}`);
+      }
+    }
+    
+    // Создаем новое сообщение с главным меню
     const sentMessage = await ctx.reply(
-      'Главное меню:\n\nВыбери действие:',
-      keyboardService.getMainMenuKeyboard()
+      formatMainMenu(),
+      { parse_mode: 'Markdown', ...keyboardService.getMainMenuKeyboard() }
     );
+    
+    // Закрепляем сообщение с главным меню
+    try {
+      await ctx.telegram.pinChatMessage(chatId, sentMessage.message_id, { disable_notification: true });
+    } catch (error: any) {
+      console.log(`[DEBUG] Could not pin message: ${error.message}`);
+    }
+    
     // Сохраняем ID сообщения с главным меню
     userStateService.setMainMenuMessage(userId, sentMessage.message_id);
     userStateService.trackBotMessage(userId, sentMessage.message_id);
