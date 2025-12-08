@@ -14,10 +14,10 @@ export class KeyboardService {
    */
   getMainMenuKeyboard() {
     return Markup.keyboard([
+      ["/start", "❓ Помощь"],
       ["☀️ Утро", "🕒 День"],
       ["📝 Позже", "🌙 Вечер"],
       ["📅 План дня", "💡 Привычки"],
-      ["❓ Помощь"],
     ]).resize();
   }
   /**
