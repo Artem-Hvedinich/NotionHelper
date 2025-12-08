@@ -101,6 +101,23 @@ export class KeyboardService {
   }
 
   /**
+   * Генерирует клавиатуру со списком задач (компактный список).
+   */
+  getDayRoutineTasksListKeyboard(tasks: DayRoutineTask[]) {
+    const buttons = tasks.map((task: DayRoutineTask) => {
+      const shortId = userStateService.registerTaskId(task.pageId);
+      // Обрезаем название задачи для кнопки (максимум 30 символов)
+      const titleShort = task.title.length > 30 ? task.title.substring(0, 27) + '...' : task.title;
+      return Markup.button.callback(`📌 ${titleShort}`, `dt:${shortId}`);
+    });
+    
+    // Добавляем кнопку "Назад" в конец
+    buttons.push(Markup.button.callback('◀️ Назад к статусам', 'day_back_statuses'));
+    
+    return Markup.inlineKeyboard(buttons, { columns: 1 });
+  }
+
+  /**
    * Генерирует клавиатуру для управления задачей дневной рутины.
    */
   async getDayRoutineTaskKeyboard(task: DayRoutineTask, checkboxes?: Array<{ propertyName: string; label: string; checked: boolean }>) {
@@ -146,19 +163,15 @@ export class KeyboardService {
       }
     }
     
-    // Кнопка для обновления задачи
-    const refreshButton = Markup.button.callback('🔄 Обновить', `dr:${shortId}`);
-    
     // Кнопка для удаления задачи
     const deleteButton = Markup.button.callback('🗑️ Удалить', `dd:${shortId}`);
     
-    // Добавляем кнопки действий
-    if (statusButtons.length > 0 || (checkboxes && checkboxes.length > 0)) {
-      buttons.push([refreshButton, deleteButton]);
-    } else {
-      buttons.push([refreshButton]);
-      buttons.push([deleteButton]);
-    }
+    // Добавляем кнопку удаления
+    buttons.push([deleteButton]);
+    
+    // Добавляем кнопку "Назад к списку" (используем сохраненный статус из userState)
+    const backButton = Markup.button.callback('◀️ Назад к списку', `dbl:${shortId}`);
+    buttons.push([backButton]);
     
     return Markup.inlineKeyboard(buttons);
   }

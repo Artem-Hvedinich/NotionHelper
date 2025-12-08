@@ -255,7 +255,7 @@ export class ActionHandlers {
 
   /**
    * Обработчик выбора статуса дневной рутины.
-   * Отправляет каждую задачу отдельным сообщением с кнопками управления.
+   * Показывает компактный список задач с возможностью открыть каждую.
    */
   async handleDayStatusSelection(ctx: Context, status: string): Promise<void> {
     try {
@@ -266,32 +266,137 @@ export class ActionHandlers {
         const statusLower = status.toLowerCase();
         const isDoneStatus = statusLower.includes('готово') || statusLower.includes('done') || statusLower.includes('завершено') || statusLower.includes('completed');
         const message = `📋 Задач со статусом "${status}" не найдено${isDoneStatus ? ' (отредактированных сегодня)' : ''}.`;
-        const sentMessage = await ctx.reply(message);
-        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+        
+        // Редактируем сообщение, если это callback query
+        if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+          await ctx.editMessageText(message);
+        } else {
+          const sentMessage = await ctx.reply(message);
+          userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+        }
         return;
       }
 
-      // Отправляем заголовок
-      const headerMessage = await ctx.reply(`📋 *Задачи со статусом "${status}"* (${tasks.length}):`, { parse_mode: 'Markdown' });
-      userStateService.trackBotMessage(ctx.from!.id, headerMessage.message_id);
+      // Сохраняем статус для навигации назад
+      userStateService.setUserTaskListStatus(ctx.from!.id, status);
 
-      // Отправляем каждую задачу отдельным сообщением с кнопками
-      for (const task of tasks) {
-        // Получаем чекбоксы для задачи
-        const checkboxes = await getDayRoutineTaskCheckboxes(task.pageId);
-        const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
-        const taskMessage = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
-        const sentMessage = await ctx.reply(taskMessage, { 
+      // Формируем компактный список задач
+      const tasksList = tasks.map((task, index) => `${index + 1}. ${task.title}`).join('\n');
+      const message = `📋 *Задачи со статусом "${status}"* (${tasks.length}):\n\n${tasksList}`;
+      const keyboard = keyboardService.getDayRoutineTasksListKeyboard(tasks);
+
+      // Редактируем сообщение, если это callback query, иначе отправляем новое
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(message, {
           parse_mode: 'Markdown',
-          ...keyboard 
+          ...keyboard
+        });
+      } else {
+        const sentMessage = await ctx.reply(message, {
+          parse_mode: 'Markdown',
+          ...keyboard
         });
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
       }
-      } catch (error: any) {
+    } catch (error: any) {
       console.error('Error fetching tasks by status:', error);
-        await ctx.answerCbQuery('Ошибка загрузки');
-        const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      await ctx.answerCbQuery('Ошибка загрузки');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик открытия задачи из списка.
+   */
+  async handleDayTaskOpen(ctx: Context, shortId: string): Promise<void> {
+    try {
+      // Получаем полный pageId по короткому ID
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.answerCbQuery('❌ Задача не найдена');
+        return;
+      }
+
+      await ctx.answerCbQuery('Загружаю задачу...');
+      
+      // Получаем информацию о задаче
+      const task = await getDayRoutineTaskInfo(pageId);
+      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
+      
+      const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+      
+      // Редактируем сообщение
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          ...keyboard
+        });
+      }
+    } catch (error: any) {
+      console.error('Error opening task:', error);
+      await ctx.answerCbQuery('Ошибка загрузки');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик возврата к списку задач.
+   */
+  async handleDayBackToList(ctx: Context, shortId: string): Promise<void> {
+    try {
+      // Получаем сохраненный статус
+      const status = userStateService.getUserTaskListStatus(ctx.from!.id);
+      if (!status) {
+        await ctx.answerCbQuery('❌ Статус не найден');
+        return;
+      }
+
+      // Возвращаемся к списку задач
+      await this.handleDayStatusSelection(ctx, status);
+    } catch (error: any) {
+      console.error('Error going back to list:', error);
+      await ctx.answerCbQuery('Ошибка');
+    }
+  }
+
+  /**
+   * Обработчик возврата к списку статусов.
+   */
+  async handleDayBackToStatuses(ctx: Context): Promise<void> {
+    try {
+      await ctx.answerCbQuery('Возвращаюсь...');
+      
+      // Удаляем сообщение со списком задач
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        try {
+          await ctx.deleteMessage();
+        } catch (error: any) {
+          // Игнорируем ошибки удаления (сообщение может быть уже удалено)
+          console.log('Could not delete message:', error.message);
+        }
+      }
+      
+      // Показываем список статусов
+      const { commandHandlers } = await import('./commands');
+      await commandHandlers.handleDay(ctx);
+    } catch (error: any) {
+      console.error('Error going back to statuses:', error);
+      await ctx.answerCbQuery('Ошибка');
     }
   }
 

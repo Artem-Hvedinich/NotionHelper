@@ -68,12 +68,6 @@ bot.action(/^ds:(.+):(.+)$/, async (ctx) => {
   await actionHandlers.handleDayTaskStatusChange(ctx, shortId, newStatus);
 });
 
-// Обработка обновления задачи дневной рутины (dr = day refresh)
-bot.action(/^dr:(.+)$/, async (ctx) => {
-  const shortId = ctx.match[1];
-  await actionHandlers.handleDayTaskRefresh(ctx, shortId);
-});
-
 // Обработка удаления задачи дневной рутины (dd = day delete)
 bot.action(/^dd:(.+)$/, async (ctx) => {
   const shortId = ctx.match[1];
@@ -85,6 +79,23 @@ bot.action(/^dc:(.+):(.+)$/, async (ctx) => {
   const shortId = ctx.match[1];
   const propertyName = ctx.match[2];
   await actionHandlers.handleDayTaskCheckboxToggle(ctx, shortId, propertyName);
+});
+
+// Обработка открытия задачи из списка (dt = day task)
+bot.action(/^dt:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleDayTaskOpen(ctx, shortId);
+});
+
+// Обработка возврата к списку задач (dbl = day back list)
+bot.action(/^dbl:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleDayBackToList(ctx, shortId);
+});
+
+// Обработка возврата к статусам
+bot.action(/^day_back_statuses$/, async (ctx) => {
+  await actionHandlers.handleDayBackToStatuses(ctx);
 });
 
 // --- Регистрация обработчиков сообщений ---

@@ -18,6 +18,9 @@ class UserStateService {
   // Хранилище для связи коротких ID с pageId (для callback_data)
   private taskIdMap = new Map<string, string>(); // shortId -> pageId
   private taskIdCounter = 0;
+  
+  // Хранилище для навигации по спискам задач (для кнопки "Назад")
+  private userTaskListStatus = new Map<number, string>(); // userId -> status
 
   /**
    * Устанавливает выбранную базу данных для пользователя.
@@ -95,6 +98,20 @@ class UserStateService {
    */
   unregisterTaskId(shortId: string): void {
     this.taskIdMap.delete(shortId);
+  }
+
+  /**
+   * Сохраняет статус для навигации назад к списку задач.
+   */
+  setUserTaskListStatus(userId: number, status: string): void {
+    this.userTaskListStatus.set(userId, status);
+  }
+
+  /**
+   * Получает сохраненный статус для навигации назад.
+   */
+  getUserTaskListStatus(userId: number): string | null {
+    return this.userTaskListStatus.get(userId) || null;
   }
 }
 
