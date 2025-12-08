@@ -4,6 +4,67 @@
  */
 
 /**
+ * Определяет эмодзи для статуса на основе ключевых слов.
+ * Гибкая система, которая работает с любыми статусами.
+ */
+export function getStatusEmoji(status: string): string {
+  const statusLower = status.toLowerCase();
+  
+  // Маппинг ключевых слов на эмодзи
+  if (statusLower.includes('готово') || statusLower.includes('done') || 
+      statusLower.includes('завершено') || statusLower.includes('completed') ||
+      statusLower.includes('выполнено') || statusLower.includes('finished')) {
+    return '✅';
+  }
+  if (statusLower.includes('работа') || statusLower.includes('work') || 
+      statusLower.includes('в процессе') || statusLower.includes('in progress')) {
+    return '🔄';
+  }
+  if (statusLower.includes('отложено') || statusLower.includes('deferred') || 
+      statusLower.includes('пауза') || statusLower.includes('pause')) {
+    return '⏸️';
+  }
+  if (statusLower.includes('ожидани') || statusLower.includes('waiting') || 
+      statusLower.includes('pending') || statusLower.includes('жду')) {
+    return '⏳';
+  }
+  if (statusLower.includes('youtube') || statusLower.includes('ютуб')) {
+    return '📺';
+  }
+  if (statusLower.includes('нов') || statusLower.includes('new') || 
+      statusLower.includes('создан') || statusLower.includes('created')) {
+    return '🆕';
+  }
+  if (statusLower.includes('отмен') || statusLower.includes('cancel') || 
+      statusLower.includes('удален') || statusLower.includes('deleted')) {
+    return '❌';
+  }
+  if (statusLower.includes('важн') || statusLower.includes('important') || 
+      statusLower.includes('приоритет') || statusLower.includes('priority')) {
+    return '🔴';
+  }
+  if (statusLower.includes('провер') || statusLower.includes('review') || 
+      statusLower.includes('на проверке')) {
+    return '👀';
+  }
+  if (statusLower.includes('блок') || statusLower.includes('block') || 
+      statusLower.includes('заблокирован')) {
+    return '🚫';
+  }
+  
+  // Дефолтный эмодзи для неизвестных статусов
+  return '📋';
+}
+
+/**
+ * Форматирует статус с эмодзи для красивого отображения.
+ */
+export function formatStatus(status: string): string {
+  const emoji = getStatusEmoji(status);
+  return `${emoji} ${status}`;
+}
+
+/**
  * Создает горизонтальный разделитель заданной длины.
  */
 export function createSeparator(length: number = 20, char: string = '─'): string {
@@ -106,7 +167,7 @@ export function formatTaskInfo(
   additionalFields?: Array<{ name: string; value: string }>
 ): string {
   let message = `📌 *${title}*\n\n`;
-  message += `📊 *Статус*: ${status}`;
+  message += `📊 *Статус*: ${formatStatus(status)}`;
 
   if (additionalFields && additionalFields.length > 0) {
     message += '\n\n';
@@ -129,7 +190,8 @@ export function formatTaskListByStatus(
   tasks: Array<{ title: string; shortId: string }>,
   totalCount?: number
 ): string {
-  let message = `📋 *${status}*`;
+  const statusWithEmoji = formatStatus(status);
+  let message = `📋 *${statusWithEmoji}*`;
 
   if (tasks.length === 0) {
     const statusLower = status.toLowerCase();

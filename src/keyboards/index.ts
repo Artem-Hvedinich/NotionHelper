@@ -3,6 +3,7 @@ import { DATABASES, NotionDatabaseKey } from '../config/databases';
 import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses, getPageEditableProperties, getLaterTasksStatuses, getDatabaseStatuses, getDatabaseKeyByPageId } from '../services/notion';
 import { MorningTask, DayRoutineTask } from '../types';
 import { userStateService } from '../services/userState';
+import { getStatusEmoji } from '../utils/formatter';
 
 /**
  * Сервис для генерации клавиатур Telegram.
@@ -88,58 +89,6 @@ export class KeyboardService {
     return Markup.inlineKeyboard(buttons, { columns: 1 });
   }
 
-  /**
-   * Определяет эмодзи для статуса на основе ключевых слов.
-   * Гибкая система, которая работает с любыми статусами.
-   */
-  private getStatusEmoji(status: string): string {
-    const statusLower = status.toLowerCase();
-    
-    // Маппинг ключевых слов на эмодзи
-    if (statusLower.includes('готово') || statusLower.includes('done') || 
-        statusLower.includes('завершено') || statusLower.includes('completed') ||
-        statusLower.includes('выполнено') || statusLower.includes('finished')) {
-      return '✅';
-    }
-    if (statusLower.includes('работа') || statusLower.includes('work') || 
-        statusLower.includes('в процессе') || statusLower.includes('in progress')) {
-      return '🔄';
-    }
-    if (statusLower.includes('отложено') || statusLower.includes('deferred') || 
-        statusLower.includes('пауза') || statusLower.includes('pause')) {
-      return '⏸️';
-    }
-    if (statusLower.includes('ожидани') || statusLower.includes('waiting') || 
-        statusLower.includes('pending') || statusLower.includes('жду')) {
-      return '⏳';
-    }
-    if (statusLower.includes('youtube') || statusLower.includes('ютуб')) {
-      return '📺';
-    }
-    if (statusLower.includes('нов') || statusLower.includes('new') || 
-        statusLower.includes('создан') || statusLower.includes('created')) {
-      return '🆕';
-    }
-    if (statusLower.includes('отмен') || statusLower.includes('cancel') || 
-        statusLower.includes('удален') || statusLower.includes('deleted')) {
-      return '❌';
-    }
-    if (statusLower.includes('важн') || statusLower.includes('important') || 
-        statusLower.includes('приоритет') || statusLower.includes('priority')) {
-      return '🔴';
-    }
-    if (statusLower.includes('провер') || statusLower.includes('review') || 
-        statusLower.includes('на проверке')) {
-      return '👀';
-    }
-    if (statusLower.includes('блок') || statusLower.includes('block') || 
-        statusLower.includes('заблокирован')) {
-      return '🚫';
-    }
-    
-    // Дефолтный эмодзи для неизвестных статусов
-    return '📋';
-  }
 
   /**
    * Генерирует клавиатуру со статусами для дневной рутины.
@@ -148,7 +97,7 @@ export class KeyboardService {
     const statuses = await getDayRoutineStatuses();
     
     const buttons = statuses.map((status: string) => {
-      const emoji = this.getStatusEmoji(status);
+      const emoji = getStatusEmoji(status);
       return Markup.button.callback(`${emoji} ${status}`, `day_status:${status}`);
     });
     
@@ -165,7 +114,7 @@ export class KeyboardService {
     const statuses = await getLaterTasksStatuses();
     
     const buttons = statuses.map((status: string) => {
-      const emoji = this.getStatusEmoji(status);
+      const emoji = getStatusEmoji(status);
       return Markup.button.callback(`${emoji} ${status}`, `later_status:${status}`);
     });
     

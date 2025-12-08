@@ -48,8 +48,8 @@ export class ActionHandlers {
       const editedMsg = await ctx.editMessageText(
         `✅ База изменена: *${dbConfig.title}*\n\nЧто хочешь сделать?`,
         { 
-          parse_mode: 'Markdown',
-          ...keyboard 
+        parse_mode: 'Markdown',
+        ...keyboard 
         }
       );
       // editMessageText редактирует существующее сообщение, ID остается тем же
@@ -59,11 +59,11 @@ export class ActionHandlers {
           const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
           if (!currentMessages.includes(msgId)) {
             userStateService.trackBotMessage(ctx.from!.id, msgId);
-          }
         }
       }
-    } else {
-      // Для остальных баз показываем обычное меню действий
+    }
+  } else {
+    // Для остальных баз показываем обычное меню действий
       const keyboard = keyboardService.getActionsKeyboard(dbKey);
       
       // При редактировании сообщения через callback query, исходное сообщение уже должно быть отслежено
@@ -77,56 +77,56 @@ export class ActionHandlers {
         }
       }
       
-      const editedMsg = await ctx.editMessageText(
-        `✅ База изменена: *${dbConfig.title}*`,
-        { 
-          parse_mode: 'Markdown',
-          ...keyboard 
-        }
-      );
+    const editedMsg = await ctx.editMessageText(
+      `✅ База изменена: *${dbConfig.title}*`,
+      { 
+        parse_mode: 'Markdown',
+        ...keyboard 
+      }
+    );
       // editMessageText редактирует существующее сообщение, ID остается тем же
       // Убеждаемся, что оно отслеживается
-      if (editedMsg && typeof editedMsg === 'object' && 'message_id' in editedMsg) {
-        const msgId = (editedMsg as any).message_id;
-        if (msgId) {
+    if (editedMsg && typeof editedMsg === 'object' && 'message_id' in editedMsg) {
+      const msgId = (editedMsg as any).message_id;
+      if (msgId) {
           const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
-          if (!currentMessages.includes(msgId)) {
+        if (!currentMessages.includes(msgId)) {
             userStateService.trackBotMessage(ctx.from!.id, msgId);
-          }
         }
       }
     }
   }
+}
 
-  /**
+/**
    * Обработчик действий создания/просмотра списка.
-   */
+ */
   async handleAction(ctx: Context, type: 'create' | 'list', dbKey: NotionDatabaseKey): Promise<void> {
-    const dbConfig = getDatabaseByKey(dbKey);
-    
+  const dbConfig = getDatabaseByKey(dbKey);
+  
     if (!dbConfig) {
       await ctx.answerCbQuery('Ошибка: база не найдена');
       return;
     }
 
-    if (type === 'create') {
-      // Установка режима создания для пользователя
+  if (type === 'create') {
+    // Установка режима создания для пользователя
       userStateService.setUserMode(ctx.from!.id, 'create', dbKey);
-      
-      await ctx.answerCbQuery();
-      const sentMessage = await ctx.reply(
-        `✍️ Напиши текст задачи, я сохраню её в базу «${dbConfig.title}»:`
-      );
+    
+    await ctx.answerCbQuery();
+    const sentMessage = await ctx.reply(
+      `✍️ Напиши текст задачи, я сохраню её в базу «${dbConfig.title}»:`
+    );
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
-    } else if (type === 'list') {
-      if (dbKey === 'dailyPlan') {
-        await ctx.answerCbQuery('Загружаю список...');
-        const listText = await listTodayDailyPlan();
-        const sentMessage = await ctx.reply(listText);
+  } else if (type === 'list') {
+    if (dbKey === 'dailyPlan') {
+      await ctx.answerCbQuery('Загружаю список...');
+      const listText = await listTodayDailyPlan();
+      const sentMessage = await ctx.reply(listText);
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
-      } else if (dbKey === 'morningRoutine') {
-        // Для утренней рутины показываем кнопки
-        try {
+    } else if (dbKey === 'morningRoutine') {
+      // Для утренней рутины показываем кнопки
+      try {
           await ctx.answerCbQuery('Загружаю...');
           await this.showMorningRoutine(ctx, false);
         } catch (error: any) {
@@ -180,8 +180,8 @@ export class ActionHandlers {
         }
       }
       
-      const pageId = await ensureTodayMorningRow();
-      const tasks = await getMorningRoutineTasksDynamic();
+        const pageId = await ensureTodayMorningRow();
+        const tasks = await getMorningRoutineTasksDynamic();
       const currentStatus = await getMorningStatus(pageId, tasks);
       const newValue = !currentStatus[propertyName];
       
@@ -189,7 +189,7 @@ export class ActionHandlers {
       
       // Обновляем клавиатуру и статистику
       const newStatus = { ...currentStatus, [propertyName]: newValue };
-      const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
+        const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
       const keyboard = await keyboardService.getMorningRoutineKeyboard(newStatus);
       
       // Подсчитываем выполненные и оставшиеся задачи
@@ -304,7 +304,7 @@ export class ActionHandlers {
       const label = tasks.find(t => t.propertyName === propertyName)?.label || propertyName;
       await ctx.answerCbQuery(newValue ? `✅ ${label} выполнено!` : `⬜ ${label} отменено`);
       
-    } catch (error: any) {
+      } catch (error: any) {
       console.error('Error updating day task:', error);
       await ctx.answerCbQuery(`❌ Ошибка: ${error.message}`);
     }
@@ -346,8 +346,8 @@ export class ActionHandlers {
       }
     } catch (error: any) {
       console.error('Error fetching tasks by status:', error);
-      await ctx.answerCbQuery('Ошибка загрузки');
-      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+        await ctx.answerCbQuery('Ошибка загрузки');
+        const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
   }
@@ -566,10 +566,10 @@ export class ActionHandlers {
       await ctx.answerCbQuery('Ошибка');
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
-    }
   }
+}
 
-  /**
+/**
    * Обработчик изменения статуса задачи дневной рутины.
    */
   async handleDayTaskStatusChange(ctx: Context, shortId: string, newStatusShort: string): Promise<void> {
@@ -844,11 +844,11 @@ export class ActionHandlers {
         parse_mode: 'Markdown',
         ...keyboard 
       });
-      if (editedMsg && typeof editedMsg === 'object' && 'message_id' in editedMsg) {
-        const msgId = (editedMsg as any).message_id;
-        if (msgId) {
+    if (editedMsg && typeof editedMsg === 'object' && 'message_id' in editedMsg) {
+      const msgId = (editedMsg as any).message_id;
+      if (msgId) {
           const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
-          if (!currentMessages.includes(msgId)) {
+        if (!currentMessages.includes(msgId)) {
             userStateService.trackBotMessage(ctx.from!.id, msgId);
           }
         }
@@ -970,7 +970,7 @@ export class ActionHandlers {
         const sentMessage = await ctx.reply(promptMessage);
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
       }
-    } catch (error: any) {
+  } catch (error: any) {
       console.error('Error editing property:', error);
       await ctx.answerCbQuery('Ошибка');
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
