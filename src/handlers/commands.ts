@@ -10,17 +10,21 @@ import { createHeader, formatRoutineStats, formatTaskList, formatMainMenu, forma
  */
 export class CommandHandlers {
   /**
-   * Вспомогательная функция для удаления всех сообщений бота.
+   * Вспомогательная функция для удаления всех сообщений бота (кроме главного меню).
    */
   private async clearBotMessages(ctx: Context): Promise<void> {
     const userId = ctx.from!.id;
     const chatId = ctx.chat!.id;
     const messageIds = userStateService.getUserBotMessages(userId);
+    const mainMenuMessageId = userStateService.getMainMenuMessage(userId);
     
     if (messageIds && messageIds.length > 0) {
       try {
         // Удаляем сообщения в обратном порядке (от новых к старым)
-        const messagesToDelete = [...messageIds].reverse();
+        // Исключаем сообщение с главным меню
+        const messagesToDelete = [...messageIds]
+          .filter(msgId => msgId !== mainMenuMessageId)
+          .reverse();
         
         for (const msgId of messagesToDelete) {
           try {
@@ -43,8 +47,13 @@ export class CommandHandlers {
       } catch (error: any) {
         // Игнорируем общие ошибки
       }
-      // Очищаем список сообщений
-      userStateService.clearUserBotMessages(userId);
+      // Очищаем список сообщений, но сохраняем главное меню
+      if (mainMenuMessageId) {
+        userStateService.clearUserBotMessages(userId);
+        userStateService.trackBotMessage(userId, mainMenuMessageId);
+      } else {
+        userStateService.clearUserBotMessages(userId);
+      }
     }
   }
 
@@ -76,7 +85,8 @@ export class CommandHandlers {
       { parse_mode: 'Markdown', ...keyboardService.getMainMenuKeyboard() }
     );
     
-    // Сохраняем ID нового сообщения
+    // Сохраняем ID нового сообщения с главным меню
+    userStateService.setMainMenuMessage(userId, sentMessage.message_id);
     userStateService.trackBotMessage(userId, sentMessage.message_id);
     console.log(`[DEBUG] Tracked new message ${sentMessage.message_id} for user ${userId}`);
   }
@@ -86,11 +96,14 @@ export class CommandHandlers {
    * Показывает главное меню.
    */
   async handleMenu(ctx: Context): Promise<void> {
+    const userId = ctx.from!.id;
     const sentMessage = await ctx.reply(
       'Главное меню:\n\nВыбери действие:',
       keyboardService.getMainMenuKeyboard()
     );
-    userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    // Сохраняем ID сообщения с главным меню
+    userStateService.setMainMenuMessage(userId, sentMessage.message_id);
+    userStateService.trackBotMessage(userId, sentMessage.message_id);
   }
 
   /**

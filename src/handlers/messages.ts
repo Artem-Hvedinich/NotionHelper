@@ -255,17 +255,21 @@ export class MessageHandlers {
    * Возвращает true, если сообщение было обработано как кнопка меню.
    */
   /**
-   * Вспомогательная функция для удаления всех сообщений бота.
+   * Вспомогательная функция для удаления всех сообщений бота (кроме главного меню).
    */
   private async clearBotMessages(ctx: Context): Promise<void> {
     const userId = ctx.from!.id;
     const chatId = ctx.chat!.id;
     const messageIds = userStateService.getUserBotMessages(userId);
+    const mainMenuMessageId = userStateService.getMainMenuMessage(userId);
     
     if (messageIds && messageIds.length > 0) {
       try {
         // Удаляем сообщения в обратном порядке (от новых к старым)
-        const messagesToDelete = [...messageIds].reverse();
+        // Исключаем сообщение с главным меню
+        const messagesToDelete = [...messageIds]
+          .filter(msgId => msgId !== mainMenuMessageId)
+          .reverse();
         
         for (const msgId of messagesToDelete) {
           try {
@@ -288,8 +292,13 @@ export class MessageHandlers {
       } catch (error: any) {
         // Игнорируем общие ошибки
       }
-      // Очищаем список сообщений
-      userStateService.clearUserBotMessages(userId);
+      // Очищаем список сообщений, но сохраняем главное меню
+      if (mainMenuMessageId) {
+        userStateService.clearUserBotMessages(userId);
+        userStateService.trackBotMessage(userId, mainMenuMessageId);
+      } else {
+        userStateService.clearUserBotMessages(userId);
+      }
     }
   }
 

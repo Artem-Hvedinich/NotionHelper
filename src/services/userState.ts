@@ -25,6 +25,9 @@ class UserStateService {
   // Хранилище для режима редактирования поля (userId -> { shortId, propertyName, propertyType })
   private userEditMode = new Map<number, { shortId: string; propertyName: string; propertyType: string }>();
 
+  // Хранилище ID сообщения с главным меню (чтобы не удалять его при очистке)
+  private userMainMenuMessage = new Map<number, number>(); // userId -> messageId
+
   /**
    * Устанавливает выбранную базу данных для пользователя.
    */
@@ -136,6 +139,20 @@ class UserStateService {
    */
   clearUserEditMode(userId: number): void {
     this.userEditMode.delete(userId);
+  }
+
+  /**
+   * Сохраняет ID сообщения с главным меню.
+   */
+  setMainMenuMessage(userId: number, messageId: number): void {
+    this.userMainMenuMessage.set(userId, messageId);
+  }
+
+  /**
+   * Получает ID сообщения с главным меню.
+   */
+  getMainMenuMessage(userId: number): number | null {
+    return this.userMainMenuMessage.get(userId) || null;
   }
 }
 
