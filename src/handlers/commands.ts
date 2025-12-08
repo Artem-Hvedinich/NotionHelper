@@ -225,6 +225,27 @@ export class CommandHandlers {
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
   }
+
+  /**
+   * Обработчик команды /later.
+   * Показывает список статусов для выбора.
+   */
+  async handleLater(ctx: Context): Promise<void> {
+    try {
+      const { getLaterTasksStatuses } = await import('../services/notion');
+      const statuses = await getLaterTasksStatuses();
+      const keyboard = await keyboardService.getLaterTasksStatusesKeyboard();
+      
+      const message = '📝 *Позже*\n\nВыбери статус:';
+      
+      const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
+      userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    } catch (error: any) {
+      console.error('Error fetching later tasks statuses:', error);
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
 }
 
 // Экспортируем singleton экземпляр

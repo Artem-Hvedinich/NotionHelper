@@ -72,8 +72,8 @@ export class MessageHandlers {
       
       const pageId = await createPageInDatabase({ databaseKey: dbKey as any, text });
 
-      // Если это дневная рутина, открываем задачу для редактирования
-      if (dbKey === 'dayRoutine') {
+      // Если это дневная рутина или "Позже", открываем задачу для редактирования
+      if (dbKey === 'dayRoutine' || dbKey === 'laterTasks') {
         // Удаляем сообщение "Сохраняю..."
         try {
           await ctx.telegram.deleteMessage(ctx.chat!.id, response.message_id);
@@ -83,7 +83,11 @@ export class MessageHandlers {
         
         // Открываем задачу для редактирования
         const shortId = userStateService.registerTaskId(pageId);
-        await actionHandlers.handleDayTaskOpenAfterCreate(ctx, shortId);
+        if (dbKey === 'dayRoutine') {
+          await actionHandlers.handleDayTaskOpenAfterCreate(ctx, shortId);
+        } else if (dbKey === 'laterTasks') {
+          await actionHandlers.handleLaterTaskOpenAfterCreate(ctx, shortId);
+        }
       } else {
         // Для остальных баз просто показываем сообщение об успехе
         await ctx.telegram.editMessageText(
@@ -114,8 +118,8 @@ export class MessageHandlers {
       userStateService.trackBotMessage(ctx.from!.id, response.message_id);
       const pageId = await createPageInDatabase({ databaseKey: dbKey as any, text });
       
-      // Если это дневная рутина, открываем задачу для редактирования
-      if (dbKey === 'dayRoutine') {
+      // Если это дневная рутина или "Позже", открываем задачу для редактирования
+      if (dbKey === 'dayRoutine' || dbKey === 'laterTasks') {
         // Удаляем сообщение "Сохраняю..."
         try {
           await ctx.telegram.deleteMessage(ctx.chat!.id, response.message_id);
@@ -125,7 +129,11 @@ export class MessageHandlers {
         
         // Открываем задачу для редактирования
         const shortId = userStateService.registerTaskId(pageId);
-        await actionHandlers.handleDayTaskOpenAfterCreate(ctx, shortId);
+        if (dbKey === 'dayRoutine') {
+          await actionHandlers.handleDayTaskOpenAfterCreate(ctx, shortId);
+        } else if (dbKey === 'laterTasks') {
+          await actionHandlers.handleLaterTaskOpenAfterCreate(ctx, shortId);
+        }
       } else {
         // Для остальных баз просто показываем сообщение об успехе
         await ctx.telegram.editMessageText(
@@ -188,6 +196,7 @@ export class MessageHandlers {
       
       // Обновляем задачу через actionHandlers
       const { actionHandlers } = await import('./actions');
+      // Определяем тип базы по pageId (можно улучшить, но для простоты используем refreshDayTask для всех)
       await actionHandlers.refreshDayTask(ctx, editMode.shortId);
       
       await ctx.reply(`✅ Поле "${editMode.propertyName}" обновлено`);
@@ -238,6 +247,10 @@ export class MessageHandlers {
           { parse_mode: 'Markdown', ...keyboardService.getActionsKeyboard(dbKey) }
         );
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+      },
+      '📝 Позже': async () => {
+        // Показываем статусы для "Позже"
+        await commandHandlers.handleLater(ctx);
       },
       '❓ Помощь': async () => {
         const helpText = 

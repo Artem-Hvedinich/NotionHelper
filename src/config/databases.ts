@@ -5,7 +5,8 @@ export type NotionDatabaseKey =
   | 'dayRoutine'
   | 'eveningRoutine'
   | 'habits'
-  | 'dailyPlan';
+  | 'dailyPlan'
+  | 'laterTasks';
 
 export interface NotionDatabaseConfig {
   id: string;
@@ -64,6 +65,15 @@ export const DATABASES: Record<NotionDatabaseKey, NotionDatabaseConfig> = {
     actions: [
       { type: 'create', buttonText: '➕ Задача на сегодня' },
       { type: 'list', buttonText: '📋 План на сегодня' },
+    ],
+  },
+  laterTasks: {
+    id: process.env.NOTION_DB_LATER_TASKS_ID || '',
+    title: 'Позже',
+    buttonText: '📝 Позже',
+    actions: [
+      { type: 'create', buttonText: '➕ Добавить задачу' },
+      { type: 'list', buttonText: '📋 Список задач' },
     ],
   },
 };

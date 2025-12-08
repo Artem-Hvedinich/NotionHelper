@@ -27,6 +27,7 @@ bot.command('morning', (ctx) => commandHandlers.handleMorning(ctx));
 bot.command('morning_status', (ctx) => commandHandlers.handleMorningStatus(ctx));
 bot.command('day', (ctx) => commandHandlers.handleDay(ctx));
 bot.command('day_status', (ctx) => commandHandlers.handleDayStatus(ctx));
+bot.command('later', (ctx) => commandHandlers.handleLater(ctx));
 
 // --- Регистрация обработчиков действий (callback queries) ---
 
@@ -124,6 +125,77 @@ bot.action(/^dp:(.+):(.+):(.+):(.+)$/, async (ctx) => {
 bot.action(/^dcancel:(.+)$/, async (ctx) => {
   const shortId = ctx.match[1];
   await actionHandlers.handleDayTaskCancelEdit(ctx, shortId);
+});
+
+// Обработка выбора статуса "Позже"
+bot.action(/^later_status:(.+)$/, async (ctx) => {
+  const status = ctx.match[1];
+  await actionHandlers.handleLaterStatusSelection(ctx, status);
+});
+
+// Обработка открытия задачи "Позже" из списка (lt = later task)
+bot.action(/^lt:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleLaterTaskOpen(ctx, shortId);
+});
+
+// Обработка возврата к списку задач "Позже" (lbl = later back list)
+bot.action(/^lbl:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleLaterBackToList(ctx, shortId);
+});
+
+// Обработка возврата к статусам "Позже"
+bot.action(/^later_back_statuses$/, async (ctx) => {
+  await actionHandlers.handleLaterBackToStatuses(ctx);
+});
+
+// Обработка добавления задачи в "Позже"
+bot.action(/^later_add_task$/, async (ctx) => {
+  await actionHandlers.handleLaterAddTask(ctx);
+});
+
+// Обработка изменения статуса задачи "Позже" (ls = later status)
+bot.action(/^ls:(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const newStatus = ctx.match[2];
+  await actionHandlers.handleLaterTaskStatusChange(ctx, shortId, newStatus);
+});
+
+// Обработка удаления задачи "Позже" (ld = later delete)
+bot.action(/^ld:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleLaterTaskDelete(ctx, shortId);
+});
+
+// Обработка переключения чекбокса задачи "Позже" (lc = later checkbox)
+bot.action(/^lc:(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const propertyName = ctx.match[2];
+  await actionHandlers.handleLaterTaskCheckboxToggle(ctx, shortId, propertyName);
+});
+
+// Обработка редактирования поля задачи "Позже" (le = later edit)
+bot.action(/^le:(.+):(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const propertyName = ctx.match[2];
+  const propertyType = ctx.match[3];
+  await actionHandlers.handleLaterTaskEditProperty(ctx, shortId, propertyName, propertyType);
+});
+
+// Обработка выбора значения для select/status поля "Позже" (lp = later property)
+bot.action(/^lp:(.+):(.+):(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const propertyName = ctx.match[2];
+  const propertyType = ctx.match[3];
+  const option = ctx.match[4];
+  await actionHandlers.handleLaterTaskPropertyOption(ctx, shortId, propertyName, propertyType, option);
+});
+
+// Обработка отмены редактирования поля "Позже" (lcancel = later cancel)
+bot.action(/^lcancel:(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  await actionHandlers.handleLaterTaskCancelEdit(ctx, shortId);
 });
 
 // --- Регистрация обработчиков сообщений ---

@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import { DATABASES, NotionDatabaseKey } from '../config/databases';
-import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses, getPageEditableProperties } from '../services/notion';
+import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses, getPageEditableProperties, getLaterTasksStatuses, getDatabaseStatuses, getDatabaseKeyByPageId } from '../services/notion';
 import { MorningTask, DayRoutineTask } from '../types';
 import { userStateService } from '../services/userState';
 
@@ -15,8 +15,9 @@ export class KeyboardService {
   getMainMenuKeyboard() {
     return Markup.keyboard([
       ["☀️ Утро", "🕒 День"],
-      ["🌙 Вечер", "💡 Привычки"],
-      ["📅 План дня", "❓ Помощь"],
+      ["📝 Позже", "🌙 Вечер"],
+      ["📅 План дня", "💡 Привычки"],
+      ["❓ Помощь"],
     ]).resize();
   }
   /**
@@ -99,7 +100,23 @@ export class KeyboardService {
     
     // Добавляем кнопку "Добавить задачу"
     buttons.push(Markup.button.callback('➕ Добавить задачу', 'day_add_task'));
+
+    return Markup.inlineKeyboard(buttons, { columns: 2 });
+  }
+
+  /**
+   * Генерирует клавиатуру со статусами для "Позже".
+   */
+  async getLaterTasksStatusesKeyboard() {
+    const statuses = await getLaterTasksStatuses();
     
+    const buttons = statuses.map((status: string) => 
+      Markup.button.callback(status, `later_status:${status}`)
+    );
+    
+    // Добавляем кнопку "Добавить задачу"
+    buttons.push(Markup.button.callback('➕ Добавить задачу', 'later_add_task'));
+
     return Markup.inlineKeyboard(buttons, { columns: 2 });
   }
 
@@ -116,6 +133,21 @@ export class KeyboardService {
     
     // Добавляем кнопку "Назад" в конец
     buttons.push(Markup.button.callback('◀️ Назад к статусам', 'day_back_statuses'));
+    
+    return Markup.inlineKeyboard(buttons, { columns: 1 });
+  }
+
+  /**
+   * Генерирует клавиатуру со списком задач "Позже" (компактный список).
+   */
+  getLaterTasksListKeyboard(tasks: DayRoutineTask[]) {
+    const buttons = tasks.map((task: DayRoutineTask) => {
+      const shortId = userStateService.registerTaskId(task.pageId);
+      const titleShort = task.title.length > 30 ? task.title.substring(0, 27) + '...' : task.title;
+      return Markup.button.callback(`📌 ${titleShort}`, `lt:${shortId}`);
+    });
+    
+    buttons.push(Markup.button.callback('◀️ Назад к статусам', 'later_back_statuses'));
     
     return Markup.inlineKeyboard(buttons, { columns: 1 });
   }
@@ -220,11 +252,105 @@ export class KeyboardService {
   }
 
   /**
+   * Генерирует клавиатуру для управления задачей "Позже".
+   */
+  async getLaterTaskKeyboard(task: DayRoutineTask, checkboxes?: Array<{ propertyName: string; label: string; checked: boolean }>, editableProperties?: Array<{ name: string; type: string; value: string; options?: string[] }>) {
+    // Автоматически определяем базу данных по pageId для получения правильных статусов
+    const dbKey = await getDatabaseKeyByPageId(task.pageId) || 'laterTasks';
+    const statuses = await getDatabaseStatuses(dbKey);
+    
+    const shortId = userStateService.registerTaskId(task.pageId);
+    
+    const buttons: any[] = [];
+    
+    if (checkboxes && checkboxes.length > 0) {
+      const checkboxButtons = checkboxes.map(checkbox => {
+        const icon = checkbox.checked ? '✅' : '⬜';
+        const propNameShort = checkbox.propertyName.length > 30 ? checkbox.propertyName.substring(0, 30) : checkbox.propertyName;
+        return Markup.button.callback(
+          `${icon} ${checkbox.label}`,
+          `lc:${shortId}:${propNameShort}`
+        );
+      });
+      
+      checkboxButtons.forEach(btn => buttons.push([btn]));
+    }
+    
+    if (editableProperties && editableProperties.length > 0) {
+      const statusPropertyName = await this.findStatusPropertyName(task.pageId);
+      
+      const titleProp = editableProperties.find(p => p.type === 'title');
+      if (titleProp) {
+        let buttonText = `✏️ ${titleProp.name}`;
+        if (titleProp.value) {
+          const valueDisplay = titleProp.value.length > 15 ? titleProp.value.substring(0, 12) + '...' : titleProp.value;
+          buttonText += `: ${valueDisplay}`;
+        }
+        const propNameShort = titleProp.name.length > 25 ? titleProp.name.substring(0, 25) : titleProp.name;
+        const propTypeShort = titleProp.type.length > 10 ? titleProp.type.substring(0, 10) : titleProp.type;
+        buttons.push([Markup.button.callback(buttonText, `le:${shortId}:${propNameShort}:${propTypeShort}`)]);
+      }
+      
+      editableProperties.forEach(prop => {
+        if (prop.type === 'checkbox' || prop.type === 'title' || prop.name === statusPropertyName) {
+          return;
+        }
+        
+        let buttonText = `✏️ ${prop.name}`;
+        if (prop.value) {
+          const valueDisplay = prop.value.length > 15 ? prop.value.substring(0, 12) + '...' : prop.value;
+          buttonText += `: ${valueDisplay}`;
+        }
+        
+        const propNameShort = prop.name.length > 25 ? prop.name.substring(0, 25) : prop.name;
+        const propTypeShort = prop.type.length > 10 ? prop.type.substring(0, 10) : prop.type;
+        
+        buttons.push([Markup.button.callback(buttonText, `le:${shortId}:${propNameShort}:${propTypeShort}`)]);
+      });
+    }
+    
+    const statusButtons = statuses
+      .filter(status => status !== task.status)
+      .map(status => {
+        const statusShort = status.length > 20 ? status.substring(0, 20) : status;
+        return Markup.button.callback(`🔄 ${status}`, `ls:${shortId}:${statusShort}`);
+      });
+    
+    for (let i = 0; i < statusButtons.length; i += 2) {
+      if (i + 1 < statusButtons.length) {
+        buttons.push([statusButtons[i], statusButtons[i + 1]]);
+      } else {
+        buttons.push([statusButtons[i]]);
+      }
+    }
+    
+    const deleteButton = Markup.button.callback('🗑️ Удалить', `ld:${shortId}`);
+    const backToListButton = Markup.button.callback('◀️ Назад к списку', `lbl:${shortId}`);
+
+    if (statusButtons.length > 0 || (checkboxes && checkboxes.length > 0)) {
+      buttons.push([deleteButton, backToListButton]);
+    } else {
+      buttons.push([deleteButton]);
+      buttons.push([backToListButton]);
+    }
+    
+    return Markup.inlineKeyboard(buttons);
+  }
+
+  /**
    * Вспомогательная функция для поиска названия поля статуса.
    */
   private async findStatusPropertyName(pageId: string): Promise<string | null> {
     try {
       const { findStatusProperty } = await import('../services/notion');
+      const { Client } = await import('@notionhq/client');
+      const notion = new Client({ auth: process.env.NOTION_API_KEY });
+      const page = await notion.pages.retrieve({ page_id: pageId });
+      const dbId = (page as any).parent?.database_id;
+      if (dbId) {
+        return await findStatusProperty(dbId);
+      }
+      // Fallback для dayRoutine
       const dbConfig = DATABASES.dayRoutine;
       return await findStatusProperty(dbConfig.id);
     } catch {

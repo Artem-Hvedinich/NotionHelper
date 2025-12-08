@@ -166,7 +166,8 @@ export async function createPageInDatabase(params: {
       break;
       
     case 'dayRoutine':
-      // Для дневной рутины устанавливаем статус по умолчанию (если есть)
+    case 'laterTasks':
+      // Для дневной рутины и "Позже" устанавливаем статус по умолчанию (если есть)
       // Находим поле статуса и устанавливаем первый доступный статус или "В ожидании"
       try {
         const statusPropertyName = await findStatusProperty(dbConfig.id);
@@ -211,7 +212,7 @@ export async function createPageInDatabase(params: {
           }
         }
       } catch (error: any) {
-        console.error('Error setting default status for dayRoutine:', error);
+        console.error(`Error setting default status for ${databaseKey}:`, error);
         // Продолжаем создание без статуса, если не удалось установить
       }
       break;
@@ -753,14 +754,28 @@ export async function findStatusProperty(databaseId: string): Promise<string | n
  * Получает все возможные статусы из базы данных дневной рутины.
  */
 export async function getDayRoutineStatuses(): Promise<string[]> {
-    const dbConfig = DATABASES.dayRoutine;
+    return await getDatabaseStatuses('dayRoutine');
+}
+
+/**
+ * Получает все возможные статусы из базы данных "Позже".
+ */
+export async function getLaterTasksStatuses(): Promise<string[]> {
+    return await getDatabaseStatuses('laterTasks');
+}
+
+/**
+ * Универсальная функция для получения статусов из любой базы данных.
+ */
+export async function getDatabaseStatuses(databaseKey: NotionDatabaseKey): Promise<string[]> {
+    const dbConfig = DATABASES[databaseKey];
     if (!dbConfig.id) {
-        throw new Error('ID базы dayRoutine не настроен');
+        throw new Error(`ID базы ${databaseKey} не настроен`);
     }
 
     const statusPropertyName = await findStatusProperty(dbConfig.id);
     if (!statusPropertyName) {
-        throw new Error('Не найдено поле статуса в базе данных дневной рутины');
+        throw new Error(`Не найдено поле статуса в базе данных ${databaseKey}`);
     }
 
     try {
@@ -792,9 +807,23 @@ export async function getDayRoutineStatuses(): Promise<string[]> {
  * Возвращает массив задач с полной информацией.
  */
 export async function getDayRoutineTasksByStatus(status: string): Promise<DayRoutineTask[]> {
-    const dbConfig = DATABASES.dayRoutine;
+    return await getDatabaseTasksByStatus('dayRoutine', status);
+}
+
+/**
+ * Получает задачи "Позже" по статусу.
+ */
+export async function getLaterTasksByStatus(status: string): Promise<DayRoutineTask[]> {
+    return await getDatabaseTasksByStatus('laterTasks', status);
+}
+
+/**
+ * Универсальная функция для получения задач по статусу из любой базы данных.
+ */
+export async function getDatabaseTasksByStatus(databaseKey: NotionDatabaseKey, status: string): Promise<DayRoutineTask[]> {
+    const dbConfig = DATABASES[databaseKey];
     if (!dbConfig.id) {
-        throw new Error('ID базы dayRoutine не настроен');
+        throw new Error(`ID базы ${databaseKey} не настроен`);
     }
 
     const statusPropertyName = await findStatusProperty(dbConfig.id);
@@ -953,14 +982,28 @@ export async function getDayRoutineTasksByStatus(status: string): Promise<DayRou
  * Обновляет статус задачи в дневной рутине.
  */
 export async function updateDayRoutineTaskStatus(pageId: string, newStatus: string): Promise<void> {
-    const dbConfig = DATABASES.dayRoutine;
+    return await updateTaskStatus('dayRoutine', pageId, newStatus);
+}
+
+/**
+ * Обновляет статус задачи в "Позже".
+ */
+export async function updateLaterTaskStatus(pageId: string, newStatus: string): Promise<void> {
+    return await updateTaskStatus('laterTasks', pageId, newStatus);
+}
+
+/**
+ * Универсальная функция для обновления статуса задачи.
+ */
+export async function updateTaskStatus(databaseKey: NotionDatabaseKey, pageId: string, newStatus: string): Promise<void> {
+    const dbConfig = DATABASES[databaseKey];
     if (!dbConfig.id) {
-        throw new Error('ID базы dayRoutine не настроен');
+        throw new Error(`ID базы ${databaseKey} не настроен`);
     }
 
     const statusPropertyName = await findStatusProperty(dbConfig.id);
     if (!statusPropertyName) {
-        throw new Error('Не найдено поле статуса в базе данных дневной рутины');
+        throw new Error(`Не найдено поле статуса в базе данных ${databaseKey}`);
     }
 
     // Получаем схему базы данных для определения типа поля статуса
@@ -997,10 +1040,34 @@ export async function updateDayRoutineTaskStatus(pageId: string, newStatus: stri
 /**
  * Получает чекбоксы задачи дневной рутины.
  */
-export async function getDayRoutineTaskCheckboxes(pageId: string): Promise<Array<{ propertyName: string; label: string; checked: boolean }>> {
-    const dbConfig = DATABASES.dayRoutine;
+export async function getDayRoutineTaskCheckboxes(pageId: string, databaseKey?: NotionDatabaseKey): Promise<Array<{ propertyName: string; label: string; checked: boolean }>> {
+    return await getTaskCheckboxes(databaseKey || 'dayRoutine', pageId);
+}
+
+/**
+ * Получает чекбоксы задачи "Позже".
+ */
+export async function getLaterTaskCheckboxes(pageId: string, databaseKey?: NotionDatabaseKey): Promise<Array<{ propertyName: string; label: string; checked: boolean }>> {
+    return await getTaskCheckboxes(databaseKey || 'laterTasks', pageId);
+}
+
+/**
+ * Универсальная функция для получения чекбоксов задачи.
+ * Автоматически определяет базу данных по pageId, если databaseKey не указан.
+ */
+export async function getTaskCheckboxes(databaseKey: NotionDatabaseKey | null, pageId: string): Promise<Array<{ propertyName: string; label: string; checked: boolean }>> {
+    // Если databaseKey не указан, определяем его автоматически
+    let actualDatabaseKey = databaseKey;
+    if (!actualDatabaseKey) {
+        actualDatabaseKey = await getDatabaseKeyByPageId(pageId);
+        if (!actualDatabaseKey) {
+            throw new Error('Не удалось определить базу данных для задачи');
+        }
+    }
+    
+    const dbConfig = DATABASES[actualDatabaseKey];
     if (!dbConfig.id) {
-        throw new Error('ID базы dayRoutine не настроен');
+        throw new Error(`ID базы ${actualDatabaseKey} не настроен`);
     }
 
     try {
@@ -1017,16 +1084,23 @@ export async function getDayRoutineTaskCheckboxes(pageId: string): Promise<Array
             return [];
         }
 
-        return checkboxProperties.map(prop => {
-            const pageProp = page.properties[prop.propertyName];
-            // @ts-ignore
-            const checked = pageProp?.checkbox || false;
-            return {
-                propertyName: prop.propertyName,
-                label: prop.label,
-                checked: checked
-            };
-        });
+        // Фильтруем только те чекбоксы, которые действительно существуют на странице
+        return checkboxProperties
+            .filter(prop => {
+                const pageProp = page.properties[prop.propertyName];
+                // Проверяем, что свойство существует на странице и является чекбоксом
+                return pageProp && pageProp.type === 'checkbox';
+            })
+            .map(prop => {
+                const pageProp = page.properties[prop.propertyName];
+                // @ts-ignore
+                const checked = pageProp?.checkbox || false;
+                return {
+                    propertyName: prop.propertyName,
+                    label: prop.label,
+                    checked: checked
+                };
+            });
     } catch (error: any) {
         console.error('Error fetching task checkboxes:', error);
         return [];
@@ -1055,7 +1129,48 @@ export async function updateDayRoutineTaskCheckbox(pageId: string, propertyName:
 /**
  * Получает полную информацию о задаче дневной рутины по ID страницы.
  */
-export async function getDayRoutineTaskInfo(pageId: string): Promise<DayRoutineTask> {
+export async function getDayRoutineTaskInfo(pageId: string, databaseKey?: NotionDatabaseKey): Promise<DayRoutineTask> {
+    return await getTaskInfo(databaseKey || 'dayRoutine', pageId);
+}
+
+/**
+ * Получает полную информацию о задаче "Позже" по ID страницы.
+ */
+export async function getLaterTaskInfo(pageId: string, databaseKey?: NotionDatabaseKey): Promise<DayRoutineTask> {
+    return await getTaskInfo(databaseKey || 'laterTasks', pageId);
+}
+
+/**
+ * Определяет ключ базы данных по pageId.
+ */
+export async function getDatabaseKeyByPageId(pageId: string): Promise<NotionDatabaseKey | null> {
+    try {
+        const page = await notion.pages.retrieve({ page_id: pageId });
+        const dbId = (page as any).parent?.database_id;
+        
+        if (!dbId) {
+            return null;
+        }
+        
+        // Ищем базу данных по ID
+        for (const [key, config] of Object.entries(DATABASES)) {
+            if (config.id === dbId) {
+                return key as NotionDatabaseKey;
+            }
+        }
+        
+        return null;
+    } catch (error: any) {
+        console.error('Error determining database key by pageId:', error);
+        return null;
+    }
+}
+
+/**
+ * Универсальная функция для получения информации о задаче.
+ * Автоматически определяет базу данных по pageId, если databaseKey не указан.
+ */
+export async function getTaskInfo(databaseKey: NotionDatabaseKey | null, pageId: string): Promise<DayRoutineTask> {
     try {
         const page = await notion.pages.retrieve({ page_id: pageId });
         
@@ -1063,7 +1178,16 @@ export async function getDayRoutineTaskInfo(pageId: string): Promise<DayRoutineT
             throw new Error('Не удалось получить свойства страницы');
         }
 
-        const dbConfig = DATABASES.dayRoutine;
+        // Если databaseKey не указан, определяем его автоматически
+        let actualDatabaseKey = databaseKey;
+        if (!actualDatabaseKey) {
+            actualDatabaseKey = await getDatabaseKeyByPageId(pageId);
+            if (!actualDatabaseKey) {
+                throw new Error('Не удалось определить базу данных для задачи');
+            }
+        }
+
+        const dbConfig = DATABASES[actualDatabaseKey];
         const titlePropName = await findTitleProperty(dbConfig.id);
         const titleProp = titlePropName || dbConfig.propName || 'Name';
         
