@@ -134,10 +134,27 @@ export class CommandHandlers {
       
       message += 'Что ты уже сделал из утренней рутины сегодня?';
       
+      // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
+      
       const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error fetching morning routine:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
