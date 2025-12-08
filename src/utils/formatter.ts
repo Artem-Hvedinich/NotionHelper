@@ -34,11 +34,18 @@ export function formatProgressBar(current: number, total: number, length: number
   if (total === 0) return '○'.repeat(length);
   
   const percentage = Math.round((current / total) * 100);
-  const filled = Math.round((current / total) * length);
-  const empty = length - filled;
+  const exactFilled = (current / total) * length;
+  const filled = Math.floor(exactFilled);
+  const hasPartial = exactFilled - filled >= 0.5; // Если остаток >= 0.5, показываем полузакрашенный
+  const empty = length - filled - (hasPartial ? 1 : 0);
   
-  // Используем более читаемые символы: ● для заполненных, ○ для пустых
-  const bar = '●'.repeat(filled) + '○'.repeat(empty);
+  // Используем символы: ● для заполненных, ◐ для частично заполненных, ○ для пустых
+  let bar = '●'.repeat(filled);
+  if (hasPartial) {
+    bar += '◐'; // Полузакрашенный круг
+  }
+  bar += '○'.repeat(empty);
+  
   return `${bar} ${percentage}%`;
 }
 
