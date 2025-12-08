@@ -155,6 +155,7 @@ export class MessageHandlers {
    * Обрабатывает режим редактирования поля задачи.
    */
   private async handleEditPropertyMode(ctx: Context, editMode: { shortId: string; propertyName: string; propertyType: string }, text: string): Promise<void> {
+    let loadingMsg: any = null;
     try {
       const pageId = userStateService.getTaskPageId(editMode.shortId);
       
@@ -164,12 +165,21 @@ export class MessageHandlers {
         return;
       }
 
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Обновляю поле...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+
       // Парсим значение в зависимости от типа поля
       let value: string | number | boolean | { start: string } | null = text.trim();
       
       if (editMode.propertyType === 'number') {
         const numValue = parseFloat(text);
         if (isNaN(numValue)) {
+          try {
+            if (loadingMsg) {
+              await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+            }
+          } catch (e) {}
           await ctx.reply('❌ Неверный формат числа. Попробуй еще раз:');
           return;
         }
@@ -178,6 +188,11 @@ export class MessageHandlers {
         // Проверяем формат даты YYYY-MM-DD
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
         if (!dateRegex.test(text)) {
+          try {
+            if (loadingMsg) {
+              await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+            }
+          } catch (e) {}
           await ctx.reply('❌ Неверный формат даты. Используй формат YYYY-MM-DD (например, 2024-12-25):');
           return;
         }

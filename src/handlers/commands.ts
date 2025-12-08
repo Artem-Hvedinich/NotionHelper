@@ -165,7 +165,12 @@ export class CommandHandlers {
    * Показывает текстовый статус утренней рутины.
    */
   async handleMorningStatus(ctx: Context): Promise<void> {
+    let loadingMsg: any = null;
     try {
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Загружаю статус...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+      
       const pageId = await ensureTodayMorningRow();
       const tasks = await getMorningRoutineTasksDynamic();
       const status = await getMorningStatus(pageId, tasks);
@@ -185,10 +190,27 @@ export class CommandHandlers {
         });
       }
       
+      // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
+      
       const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown' });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error fetching morning status:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }

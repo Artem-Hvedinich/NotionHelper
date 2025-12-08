@@ -167,6 +167,8 @@ export class ActionHandlers {
    */
   async handleMorningTask(ctx: Context, propertyName: string): Promise<void> {
     try {
+      await ctx.answerCbQuery('Обновляю...');
+      
       // Отслеживаем исходное сообщение перед редактированием
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
         const originalMsgId = ctx.update.callback_query.message.message_id;
@@ -231,6 +233,8 @@ export class ActionHandlers {
    */
   async handleDayTask(ctx: Context, propertyName: string): Promise<void> {
     try {
+      await ctx.answerCbQuery('Обновляю...');
+      
       // Отслеживаем исходное сообщение перед редактированием
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
         const originalMsgId = ctx.update.callback_query.message.message_id;
@@ -788,27 +792,46 @@ export class ActionHandlers {
    * Вспомогательный метод для переиспользования логики.
    */
   private async showMorningRoutine(ctx: Context, isEdit: boolean): Promise<void> {
-    const pageId = await ensureTodayMorningRow();
-    const tasks = await getMorningRoutineTasksDynamic();
-    const status = await getMorningStatus(pageId, tasks);
-    const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
-    const keyboard = await keyboardService.getMorningRoutineKeyboard(status);
-    
-    let message = '🌅 *Утренняя рутина*\n\n';
-    
-    // Динамически выводим все не-чекбокс поля
-    nonCheckboxProps.forEach(prop => {
-      message += `${prop.name}: *${prop.value}*\n`;
-    });
-    
-    if (nonCheckboxProps.length > 0) {
-      message += '\n';
-    }
-    
-    message += 'Что ты уже сделал сегодня?';
-    
-    // Если это callback query, редактируем сообщение, иначе отправляем новое
-    if (isEdit && 'callback_query' in ctx.update) {
+    let loadingMsg: any = null;
+    try {
+      // Показываем индикатор загрузки только если это не редактирование (чтобы не было двойного индикатора)
+      if (!isEdit) {
+        loadingMsg = await ctx.reply('⏳ Загружаю утреннюю рутину...');
+        userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+      } else {
+        await ctx.answerCbQuery('Загружаю...');
+      }
+      
+      const pageId = await ensureTodayMorningRow();
+      const tasks = await getMorningRoutineTasksDynamic();
+      const status = await getMorningStatus(pageId, tasks);
+      const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
+      const keyboard = await keyboardService.getMorningRoutineKeyboard(status);
+      
+      let message = '🌅 *Утренняя рутина*\n\n';
+      
+      // Динамически выводим все не-чекбокс поля
+      nonCheckboxProps.forEach(prop => {
+        message += `${prop.name}: *${prop.value}*\n`;
+      });
+      
+      if (nonCheckboxProps.length > 0) {
+        message += '\n';
+      }
+      
+      message += 'Что ты уже сделал сегодня?';
+      
+      // Удаляем сообщение "Загружаю..." если оно было создано
+      if (loadingMsg) {
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        } catch (deleteError: any) {
+          // Игнорируем ошибки удаления
+        }
+      }
+      
+      // Если это callback query, редактируем сообщение, иначе отправляем новое
+      if (isEdit && 'callback_query' in ctx.update) {
       // Отслеживаем исходное сообщение перед редактированием
       if (ctx.update.callback_query.message) {
         const originalMsgId = ctx.update.callback_query.message.message_id;
@@ -834,6 +857,19 @@ export class ActionHandlers {
     } else {
       const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    }
+    } catch (error: any) {
+      console.error('Error showing morning routine:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      if (loadingMsg) {
+        try {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        } catch (deleteError: any) {
+          // Игнорируем ошибки удаления
+        }
+      }
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
   }
 
