@@ -593,41 +593,8 @@ export class ActionHandlers {
       await ctx.answerCbQuery('Обновляю статус...');
       await updateDayRoutineTaskStatus(pageId, newStatus);
       
-      // Получаем обновленную информацию о задаче
-      const task = await getDayRoutineTaskInfo(pageId);
-      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
-      const editableProperties = await getPageEditableProperties(pageId);
-      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
-      
-      // Формируем сообщение с информацией о задаче
-      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      // Добавляем информацию о других полях (кроме статуса)
-      if (editableProperties && editableProperties.length > 0) {
-        const statusPropertyName = await this.findStatusPropertyName(pageId);
-        const otherProps = editableProperties.filter(p => p.type !== 'checkbox' && p.name !== statusPropertyName && p.value);
-        if (otherProps.length > 0) {
-          message += '\n\n';
-          otherProps.forEach(prop => {
-            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
-            message += `${prop.name}: ${valueDisplay}\n`;
-          });
-        }
-      }
-      
-      // Обновляем сообщение
-      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
-        const originalMsgId = ctx.update.callback_query.message.message_id;
-        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
-        if (!currentMessages.includes(originalMsgId)) {
-          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
-        }
-        
-        await ctx.editMessageText(message, {
-          ...keyboard
-        });
-      }
-      
+      // Обновляем задачу
+      await this.refreshDayTask(ctx, shortId);
       await ctx.answerCbQuery(`✅ Статус изменен на "${newStatus}"`);
     } catch (error: any) {
       console.error('Error updating task status:', error);
@@ -976,6 +943,7 @@ export class ActionHandlers {
       } else if (property.type === 'checkbox') {
         // Для чекбокса просто переключаем значение
         const newValue = property.value !== 'true';
+        await ctx.answerCbQuery('Обновляю...');
         await updatePageProperty(pageId, property.name, property.type, newValue);
         
         // Обновляем задачу
@@ -1076,8 +1044,10 @@ export class ActionHandlers {
         return;
       }
 
-      const task = await getDayRoutineTaskInfo(pageId);
-      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
+      // Определяем базу данных автоматически
+      const dbKey = await getDatabaseKeyByPageId(pageId) || 'dayRoutine';
+      const task = await getDayRoutineTaskInfo(pageId, dbKey);
+      const checkboxes = await getDayRoutineTaskCheckboxes(pageId, dbKey);
       const editableProperties = await getPageEditableProperties(pageId);
       const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes, editableProperties);
       
@@ -1100,6 +1070,7 @@ export class ActionHandlers {
         }
       }
 
+      // Если это callback query, редактируем сообщение
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
         const originalMsgId = ctx.update.callback_query.message.message_id;
         const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
@@ -1108,9 +1079,68 @@ export class ActionHandlers {
         }
         
         await ctx.editMessageText(message, keyboard);
+      } else {
+        // Если это текстовое сообщение, отправляем новое
+        const sentMessage = await ctx.reply(message, keyboard);
+        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
       }
-  } catch (error: any) {
+    } catch (error: any) {
       console.error('Error refreshing task:', error);
+    }
+  }
+
+  /**
+   * Вспомогательная функция для обновления отображения задачи "Позже".
+   */
+  async refreshLaterTask(ctx: Context, shortId: string): Promise<void> {
+    try {
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        return;
+      }
+
+      // Определяем базу данных автоматически
+      const dbKey = await getDatabaseKeyByPageId(pageId) || 'laterTasks';
+      const task = await getLaterTaskInfo(pageId, dbKey);
+      const checkboxes = await getLaterTaskCheckboxes(pageId, dbKey);
+      const editableProperties = await getPageEditableProperties(pageId);
+      const keyboard = await keyboardService.getLaterTaskKeyboard(task, checkboxes, editableProperties);
+      
+      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
+      
+      if (editableProperties && editableProperties.length > 0) {
+        const statusPropertyName = await this.findStatusPropertyName(pageId);
+        const otherProps = editableProperties.filter(p => 
+          p.type !== 'checkbox' && 
+          p.type !== 'title' && 
+          p.name !== statusPropertyName && 
+          p.value
+        );
+        if (otherProps.length > 0) {
+          message += '\n\n';
+          otherProps.forEach(prop => {
+            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
+            message += `${prop.name}: ${valueDisplay}\n`;
+          });
+        }
+      }
+
+      // Если это callback query, редактируем сообщение
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(message, keyboard);
+      } else {
+        // Если это текстовое сообщение, отправляем новое
+        const sentMessage = await ctx.reply(message, keyboard);
+        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+      }
+    } catch (error: any) {
+      console.error('Error refreshing later task:', error);
     }
   }
 
@@ -1395,25 +1425,8 @@ export class ActionHandlers {
       await ctx.answerCbQuery('Обновляю статус...');
       await updateLaterTaskStatus(pageId, newStatus);
       
-      const task = await getLaterTaskInfo(pageId);
-      const checkboxes = await getLaterTaskCheckboxes(pageId);
-      const editableProperties = await getPageEditableProperties(pageId);
-      const keyboard = await keyboardService.getLaterTaskKeyboard(task, checkboxes, editableProperties);
-      
-      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
-        const originalMsgId = ctx.update.callback_query.message.message_id;
-        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
-        if (!currentMessages.includes(originalMsgId)) {
-          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
-        }
-        
-        await ctx.editMessageText(message, {
-          ...keyboard
-        });
-      }
-      
+      // Обновляем задачу
+      await this.refreshLaterTask(ctx, shortId);
       await ctx.answerCbQuery(`✅ Статус изменен на "${newStatus}"`);
     } catch (error: any) {
       console.error('Error updating later task status:', error);
@@ -1498,25 +1511,8 @@ export class ActionHandlers {
         throw error;
       }
 
-      const task = await getLaterTaskInfo(pageId);
-      const updatedCheckboxes = await getLaterTaskCheckboxes(pageId);
-      const editableProperties = await getPageEditableProperties(pageId);
-      const keyboard = await keyboardService.getLaterTaskKeyboard(task, updatedCheckboxes, editableProperties);
-      
-      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
-        const originalMsgId = ctx.update.callback_query.message.message_id;
-        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
-        if (!currentMessages.includes(originalMsgId)) {
-          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
-        }
-        
-        await ctx.editMessageText(message, {
-          ...keyboard
-        });
-      }
-      
+      // Обновляем задачу
+      await this.refreshLaterTask(ctx, shortId);
       await ctx.answerCbQuery(newValue ? `✅ ${checkbox.label} отмечено` : `⬜ ${checkbox.label} снято`);
     } catch (error: any) {
       console.error('Error toggling later task checkbox:', error);
@@ -1564,19 +1560,11 @@ export class ActionHandlers {
         }
       } else if (property.type === 'checkbox') {
         const newValue = property.value !== 'true';
+        await ctx.answerCbQuery('Обновляю...');
         await updatePageProperty(pageId, property.name, property.type, newValue);
         
-        const task = await getLaterTaskInfo(pageId);
-        const checkboxes = await getLaterTaskCheckboxes(pageId);
-        const editableProps = await getPageEditableProperties(pageId);
-        const keyboard = await keyboardService.getLaterTaskKeyboard(task, checkboxes, editableProps);
-        
-        const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-        
-        if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
-          await ctx.editMessageText(message, keyboard);
-        }
-        
+        // Обновляем задачу
+        await this.refreshLaterTask(ctx, shortId);
         await ctx.answerCbQuery(newValue ? `✅ ${property.name} отмечено` : `⬜ ${property.name} снято`);
       } else {
         userStateService.setUserEditMode(ctx.from!.id, shortId, property.name, property.type);
@@ -1640,17 +1628,8 @@ export class ActionHandlers {
       await ctx.answerCbQuery('Обновляю...');
       await updatePageProperty(pageId, property.name, property.type, option);
       
-      const task = await getLaterTaskInfo(pageId);
-      const checkboxes = await getLaterTaskCheckboxes(pageId);
-      const editableProps = await getPageEditableProperties(pageId);
-      const keyboard = await keyboardService.getLaterTaskKeyboard(task, checkboxes, editableProps);
-      
-      const message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
-        await ctx.editMessageText(message, keyboard);
-      }
-      
+      // Обновляем задачу
+      await this.refreshLaterTask(ctx, shortId);
       await ctx.answerCbQuery(`✅ ${property.name} изменено на "${option}"`);
     } catch (error: any) {
       console.error('Error updating later task property option:', error);
@@ -1666,49 +1645,7 @@ export class ActionHandlers {
   async handleLaterTaskCancelEdit(ctx: Context, shortId: string): Promise<void> {
     userStateService.clearUserEditMode(ctx.from!.id);
     await ctx.answerCbQuery('❌ Отменено');
-    
-    try {
-      const pageId = userStateService.getTaskPageId(shortId);
-      if (!pageId) {
-        return;
-      }
-
-      const task = await getLaterTaskInfo(pageId);
-      const checkboxes = await getLaterTaskCheckboxes(pageId);
-      const editableProperties = await getPageEditableProperties(pageId);
-      const keyboard = await keyboardService.getLaterTaskKeyboard(task, checkboxes, editableProperties);
-      
-      let message = `📌 ${task.title}\n\nСтатус: ${task.status}`;
-      
-      if (editableProperties && editableProperties.length > 0) {
-        const statusPropertyName = await this.findStatusPropertyName(pageId);
-        const otherProps = editableProperties.filter(p => 
-          p.type !== 'checkbox' && 
-          p.type !== 'title' && 
-          p.name !== statusPropertyName && 
-          p.value
-        );
-        if (otherProps.length > 0) {
-          message += '\n\n';
-          otherProps.forEach(prop => {
-            const valueDisplay = prop.value.length > 50 ? prop.value.substring(0, 47) + '...' : prop.value;
-            message += `${prop.name}: ${valueDisplay}\n`;
-          });
-        }
-      }
-
-      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
-        const originalMsgId = ctx.update.callback_query.message.message_id;
-        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
-        if (!currentMessages.includes(originalMsgId)) {
-          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
-        }
-        
-        await ctx.editMessageText(message, keyboard);
-      }
-    } catch (error: any) {
-      console.error('Error refreshing later task:', error);
-    }
+    await this.refreshLaterTask(ctx, shortId);
   }
 }
 

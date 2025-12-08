@@ -155,6 +155,7 @@ export class MessageHandlers {
    * Обрабатывает режим редактирования поля задачи.
    */
   private async handleEditPropertyMode(ctx: Context, editMode: { shortId: string; propertyName: string; propertyType: string }, text: string): Promise<void> {
+    let loadingMsg: any = null;
     try {
       const pageId = userStateService.getTaskPageId(editMode.shortId);
       
@@ -164,12 +165,24 @@ export class MessageHandlers {
         return;
       }
 
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Обновляю поле...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+
       // Парсим значение в зависимости от типа поля
       let value: string | number | boolean | { start: string } | null = text.trim();
       
       if (editMode.propertyType === 'number') {
         const numValue = parseFloat(text);
         if (isNaN(numValue)) {
+          // Удаляем сообщение загрузки при ошибке валидации
+          try {
+            if (loadingMsg) {
+              await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+            }
+          } catch (deleteError: any) {
+            // Игнорируем ошибки удаления
+          }
           await ctx.reply('❌ Неверный формат числа. Попробуй еще раз:');
           return;
         }
@@ -178,6 +191,14 @@ export class MessageHandlers {
         // Проверяем формат даты YYYY-MM-DD
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
         if (!dateRegex.test(text)) {
+          // Удаляем сообщение загрузки при ошибке валидации
+          try {
+            if (loadingMsg) {
+              await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+            }
+          } catch (deleteError: any) {
+            // Игнорируем ошибки удаления
+          }
           await ctx.reply('❌ Неверный формат даты. Используй формат YYYY-MM-DD (например, 2024-12-25):');
           return;
         }
@@ -194,14 +215,35 @@ export class MessageHandlers {
       // Очищаем режим редактирования
       userStateService.clearUserEditMode(ctx.from!.id);
       
-      // Обновляем задачу через actionHandlers
-      const { actionHandlers } = await import('./actions');
-      // Определяем тип базы по pageId (можно улучшить, но для простоты используем refreshDayTask для всех)
-      await actionHandlers.refreshDayTask(ctx, editMode.shortId);
+      // Удаляем сообщение загрузки
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       
-      await ctx.reply(`✅ Поле "${editMode.propertyName}" обновлено`);
+      // Обновляем задачу через actionHandlers (определяем базу автоматически)
+      const { actionHandlers } = await import('./actions');
+      const { getDatabaseKeyByPageId } = await import('../services/notion');
+      
+      const dbKey = await getDatabaseKeyByPageId(pageId);
+      if (dbKey === 'laterTasks') {
+        await actionHandlers.refreshLaterTask(ctx, editMode.shortId);
+      } else {
+        await actionHandlers.refreshDayTask(ctx, editMode.shortId);
+      }
     } catch (error: any) {
       console.error('Error updating property:', error);
+      // Удаляем сообщение загрузки при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.clearUserEditMode(ctx.from!.id);
     }
