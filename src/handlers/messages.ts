@@ -112,14 +112,8 @@ export class MessageHandlers {
     const buttonMap: Record<string, () => Promise<void>> = {
       '☀️ Утро': () => commandHandlers.handleMorning(ctx),
       '🕒 День': async () => {
-        const dbKey: NotionDatabaseKey = 'dayRoutine';
-        userStateService.setUserDatabase(ctx.from!.id, dbKey);
-        const dbConfig = getDatabaseByKey(dbKey);
-        const sentMessage = await ctx.reply(
-          `✅ Выбрана база: *${dbConfig.title}*\n\nЧто добавить?`,
-          { parse_mode: 'Markdown', ...keyboardService.getActionsKeyboard(dbKey) }
-        );
-        userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+        // Показываем чеклист дневной рутины
+        await commandHandlers.handleDay(ctx);
       },
       '🌙 Вечер': async () => {
         const dbKey: NotionDatabaseKey = 'eveningRoutine';

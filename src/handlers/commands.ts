@@ -1,5 +1,5 @@
 import { Context } from 'telegraf';
-import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties } from '../services/notion';
+import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, getDayRoutineStatuses, getDayRoutineTasksByStatus } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
 
@@ -167,6 +167,60 @@ export class CommandHandlers {
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error fetching morning status:', error);
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик команды /day.
+   * Показывает список статусов для выбора.
+   */
+  async handleDay(ctx: Context): Promise<void> {
+    try {
+      const statuses = await getDayRoutineStatuses();
+      const keyboard = await keyboardService.getDayRoutineStatusesKeyboard();
+      
+      const message = '🕒 *Дневные задачи*\n\nВыбери статус:';
+      
+      const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
+      userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    } catch (error: any) {
+      console.error('Error fetching day routine statuses:', error);
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик команды /day_status.
+   * Показывает текстовый статус дневной рутины.
+   */
+  async handleDayStatus(ctx: Context): Promise<void> {
+    try {
+      const pageId = await ensureTodayDayRow();
+      const tasks = await getDayRoutineTasksDynamic();
+      const status = await getDayStatus(pageId, tasks);
+      const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
+      
+      let message = '🕒 *Дневная рутина сегодня:*\n\n';
+      tasks.forEach(task => {
+        const isDone = status[task.propertyName];
+        message += `${isDone ? '✅' : '⬜'} ${task.label}\n`;
+      });
+
+      // Динамически выводим все не-чекбокс поля
+      if (nonCheckboxProps.length > 0) {
+        message += '\n';
+        nonCheckboxProps.forEach(prop => {
+          message += `${prop.name}: *${prop.value}*\n`;
+        });
+      }
+      
+      const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown' });
+      userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    } catch (error: any) {
+      console.error('Error fetching day status:', error);
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }

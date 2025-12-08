@@ -32,7 +32,7 @@ export const DATABASES: Record<NotionDatabaseKey, NotionDatabaseConfig> = {
   },
   dayRoutine: {
     id: process.env.NOTION_DB_DAY_ROUTINE_ID || '',
-    title: 'Дневная рутина',
+    title: 'Дневные задачи',
     buttonText: '🕒 День',
     actions: [
       { type: 'create', buttonText: '➕ Добавить дневную задачу' },

@@ -107,6 +107,17 @@ export async function getMorningRoutineTasksDynamic(): Promise<{ propertyName: s
     return await getDatabaseCheckboxProperties(dbConfig.id);
 }
 
+/**
+ * Получает динамический список задач для дневной рутины из базы данных.
+ */
+export async function getDayRoutineTasksDynamic(): Promise<{ propertyName: string; label: string }[]> {
+    const dbConfig = DATABASES.dayRoutine;
+    if (!dbConfig.id) {
+        throw new Error('ID базы dayRoutine не настроен');
+    }
+    return await getDatabaseCheckboxProperties(dbConfig.id);
+}
+
 export async function createPageInDatabase(params: {
   databaseKey: NotionDatabaseKey;
   text: string;
@@ -258,10 +269,144 @@ export async function ensureTodayMorningRow(): Promise<string> {
 }
 
 /**
+ * Находит поле даты в базе данных динамически.
+ * Ищет поле типа 'date' с названиями, содержащими "Дата", "Date" или эмодзи календаря.
+ */
+async function findDateProperty(databaseId: string): Promise<string | null> {
+    try {
+        const response = await notion.databases.retrieve({ database_id: databaseId });
+        
+        for (const [propName, prop] of Object.entries(response.properties)) {
+            // @ts-ignore
+            if (prop.type === 'date') {
+                // Проверяем, содержит ли название поле даты
+                const nameLower = propName.toLowerCase();
+                if (nameLower.includes('дата') || nameLower.includes('date') || propName.includes('📅') || propName.includes('🗓️')) {
+                    return propName;
+                }
+            }
+        }
+        
+        // Если не нашли по названию, возвращаем первое поле типа date
+        for (const [propName, prop] of Object.entries(response.properties)) {
+            // @ts-ignore
+            if (prop.type === 'date') {
+                return propName;
+            }
+        }
+        
+        return null;
+    } catch (error: any) {
+        console.error('Error finding date property:', error);
+        return null;
+    }
+}
+
+/**
+ * Проверяет, существует ли запись дневной рутины на сегодня.
+ * Если нет — создает её.
+ * Возвращает ID страницы.
+ */
+export async function ensureTodayDayRow(): Promise<string> {
+    const dbConfig = DATABASES.dayRoutine;
+    if (!dbConfig.id) {
+        throw new Error('ID базы dayRoutine не настроен');
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const titleProp = dbConfig.propName || 'Name';
+
+    // Находим поле даты динамически
+    const datePropertyName = await findDateProperty(dbConfig.id);
+
+    // 1. Ищем существующую запись (только если есть поле даты)
+    if (datePropertyName) {
+        try {
+            const response = await notion.databases.query({
+                database_id: dbConfig.id,
+                filter: {
+                    property: datePropertyName,
+                    date: {
+                        equals: today
+                    }
+                }
+            });
+
+            if (response.results.length > 0) {
+                return response.results[0].id;
+            }
+        } catch (error: any) {
+            console.error('Error querying by date:', error);
+            // Продолжаем создание новой записи, если фильтрация по дате не удалась
+        }
+    }
+
+    // 2. Если не найдено, создаем новую
+    const properties: Record<string, any> = {
+        [titleProp]: {
+            title: [
+                {
+                    text: {
+                        content: `День ${today}`
+                    }
+                }
+            ]
+        }
+    };
+
+    // Добавляем поле даты только если оно найдено
+    if (datePropertyName) {
+        properties[datePropertyName] = {
+            date: {
+                start: today
+            }
+        };
+    }
+
+    const newPage = await notion.pages.create({
+        parent: { database_id: dbConfig.id },
+        properties: properties
+    });
+
+    return newPage.id;
+}
+
+/**
  * Получает текущий статус утренней рутины (чекбоксы).
  * Использует динамический список задач из базы данных.
  */
 export async function getMorningStatus(pageId: string, tasks?: { propertyName: string; label: string }[]): Promise<Record<string, boolean>> {
+  const page = await notion.pages.retrieve({ page_id: pageId });
+  const result: Record<string, boolean> = {};
+
+  if (!('properties' in page)) {
+      throw new Error('Не удалось получить свойства страницы');
+  }
+
+  // Если передан список задач, используем его, иначе берем все чекбоксы из страницы
+  if (tasks) {
+      tasks.forEach(task => {
+          const prop = page.properties[task.propertyName];
+          // @ts-ignore
+          result[task.propertyName] = prop?.checkbox || false;
+      });
+  } else {
+      // Fallback: берем все чекбоксы из страницы
+      Object.values(page.properties).forEach((prop: any) => {
+          if (prop.type === 'checkbox') {
+              result[prop.name] = prop.checkbox;
+          }
+      });
+  }
+
+  return result;
+}
+
+/**
+ * Получает текущий статус дневной рутины (чекбоксы).
+ * Использует динамический список задач из базы данных.
+ */
+export async function getDayStatus(pageId: string, tasks?: { propertyName: string; label: string }[]): Promise<Record<string, boolean>> {
   const page = await notion.pages.retrieve({ page_id: pageId });
   const result: Record<string, boolean> = {};
 
@@ -472,4 +617,234 @@ export async function updateMorningTask(pageId: string, propertyName: string, va
           }
       }
   });
+}
+
+/**
+ * Отмечает чекбокс задачи в дневной рутине.
+ */
+export async function updateDayTask(pageId: string, propertyName: string, value: boolean): Promise<void> {
+  await notion.pages.update({
+      page_id: pageId,
+      properties: {
+          [propertyName]: {
+              checkbox: value
+          }
+      }
+  });
+}
+
+/**
+ * Находит поле заголовка (title) в базе данных динамически.
+ * Ищет поле типа 'title'.
+ */
+async function findTitleProperty(databaseId: string): Promise<string | null> {
+    try {
+        const response = await notion.databases.retrieve({ database_id: databaseId });
+        
+        for (const [propName, prop] of Object.entries(response.properties)) {
+            // @ts-ignore
+            if (prop.type === 'title') {
+                return propName;
+            }
+        }
+        
+        return null;
+    } catch (error: any) {
+        console.error('Error finding title property:', error);
+        return null;
+    }
+}
+
+/**
+ * Находит поле статуса в базе данных динамически.
+ * Ищет поле типа 'select' с названиями, содержащими "Статус", "Status" или эмодзи статуса.
+ */
+async function findStatusProperty(databaseId: string): Promise<string | null> {
+    try {
+        const response = await notion.databases.retrieve({ database_id: databaseId });
+        
+        for (const [propName, prop] of Object.entries(response.properties)) {
+            // @ts-ignore
+            if (prop.type === 'select' || prop.type === 'status') {
+                // Проверяем, содержит ли название поле статуса
+                const nameLower = propName.toLowerCase();
+                if (nameLower.includes('статус') || nameLower.includes('status') || propName.includes('🔄') || propName.includes('⌚')) {
+                    return propName;
+                }
+            }
+        }
+        
+        // Если не нашли по названию, возвращаем первое поле типа select или status
+        for (const [propName, prop] of Object.entries(response.properties)) {
+            // @ts-ignore
+            if (prop.type === 'select' || prop.type === 'status') {
+                return propName;
+            }
+        }
+        
+        return null;
+    } catch (error: any) {
+        console.error('Error finding status property:', error);
+        return null;
+    }
+}
+
+/**
+ * Получает все возможные статусы из базы данных дневной рутины.
+ */
+export async function getDayRoutineStatuses(): Promise<string[]> {
+    const dbConfig = DATABASES.dayRoutine;
+    if (!dbConfig.id) {
+        throw new Error('ID базы dayRoutine не настроен');
+    }
+
+    const statusPropertyName = await findStatusProperty(dbConfig.id);
+    if (!statusPropertyName) {
+        throw new Error('Не найдено поле статуса в базе данных дневной рутины');
+    }
+
+    try {
+        const response = await notion.databases.retrieve({ database_id: dbConfig.id });
+        const statusProp = response.properties[statusPropertyName];
+        
+        // @ts-ignore
+        if (statusProp.type === 'select') {
+            // @ts-ignore
+            return statusProp.select.options.map((opt: any) => opt.name);
+        } else if (statusProp.type === 'status') {
+            // @ts-ignore
+            return statusProp.status.options.map((opt: any) => opt.name);
+        }
+        
+        return [];
+    } catch (error: any) {
+        console.error('Error fetching statuses:', error);
+        throw new Error(`Не удалось получить статусы: ${error.message}`);
+    }
+}
+
+/**
+ * Получает задачи дневной рутины по статусу.
+ * Если статус "Готово" (или похожий), фильтрует по Last edited time = сегодня.
+ */
+export async function getDayRoutineTasksByStatus(status: string): Promise<string> {
+    const dbConfig = DATABASES.dayRoutine;
+    if (!dbConfig.id) {
+        throw new Error('ID базы dayRoutine не настроен');
+    }
+
+    const statusPropertyName = await findStatusProperty(dbConfig.id);
+    if (!statusPropertyName) {
+        throw new Error('Не найдено поле статуса в базе данных дневной рутины');
+    }
+
+    // Получаем схему базы данных для определения типа поля статуса
+    const dbSchema = await notion.databases.retrieve({ database_id: dbConfig.id });
+    const statusProp = dbSchema.properties[statusPropertyName];
+    // @ts-ignore
+    const statusPropType = statusProp?.type;
+
+    const today = new Date().toISOString().split('T')[0];
+    const todayStart = new Date(today + 'T00:00:00.000Z').toISOString();
+    const todayEnd = new Date(today + 'T23:59:59.999Z').toISOString();
+
+    try {
+        // Проверяем, является ли статус "Готово" (или похожим)
+        const statusLower = status.toLowerCase();
+        const isDoneStatus = statusLower.includes('готово') || statusLower.includes('done') || statusLower.includes('завершено') || statusLower.includes('completed');
+
+        // Строим фильтр
+        let filter: any;
+
+        // Если статус "Готово", добавляем фильтр по дате редактирования
+        if (isDoneStatus) {
+            filter = {
+                and: [
+                    {
+                        property: statusPropertyName,
+                        [statusPropType === 'select' ? 'select' : 'status']: { equals: status }
+                    },
+                    {
+                        timestamp: 'last_edited_time',
+                        last_edited_time: {
+                            on_or_after: todayStart,
+                            on_or_before: todayEnd
+                        }
+                    }
+                ]
+            };
+        } else {
+            filter = {
+                property: statusPropertyName,
+                [statusPropType === 'select' ? 'select' : 'status']: { equals: status }
+            };
+        }
+
+        const response = await notion.databases.query({
+            database_id: dbConfig.id,
+            filter: filter,
+            sorts: [
+                {
+                    timestamp: 'last_edited_time',
+                    direction: 'descending'
+                }
+            ]
+        });
+
+        if (response.results.length === 0) {
+            return `📋 Задач со статусом "${status}" не найдено${isDoneStatus ? ' (отредактированных сегодня)' : ''}.`;
+        }
+
+        // Динамически находим поле заголовка
+        const titlePropName = await findTitleProperty(dbConfig.id);
+        if (!titlePropName) {
+            // Fallback: используем propName из конфига или 'Name'
+            const fallbackTitleProp = dbConfig.propName || 'Name';
+            console.warn(`Не найдено поле title в базе данных, используем fallback: ${fallbackTitleProp}`);
+        }
+        
+        const titleProp = titlePropName || dbConfig.propName || 'Name';
+        
+        const tasks = response.results.map((page: any) => {
+            // Пробуем получить заголовок из поля title
+            const titleProperty = page.properties[titleProp];
+            let title = 'Без названия';
+            
+            if (titleProperty) {
+                // @ts-ignore
+                if (titleProperty.type === 'title' && titleProperty.title) {
+                    // @ts-ignore
+                    title = titleProperty.title[0]?.plain_text || 'Без названия';
+                } else {
+                    // Если это не title, пробуем найти title поле динамически
+                    for (const [propKey, prop] of Object.entries(page.properties)) {
+                        // @ts-ignore
+                        if (prop.type === 'title' && prop.title) {
+                            // @ts-ignore
+                            title = prop.title[0]?.plain_text || 'Без названия';
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // Если свойство не найдено, ищем title поле динамически
+                for (const [propKey, prop] of Object.entries(page.properties)) {
+                    // @ts-ignore
+                    if (prop.type === 'title' && prop.title) {
+                        // @ts-ignore
+                        title = prop.title[0]?.plain_text || 'Без названия';
+                        break;
+                    }
+                }
+            }
+            
+            return `• ${title}`;
+        });
+
+        return `📋 *Задачи со статусом "${status}"*${isDoneStatus ? ' (отредактированные сегодня)' : ''}:\n\n${tasks.join('\n')}`;
+
+    } catch (error: any) {
+        console.error('Error fetching tasks by status:', error);
+        throw new Error(`Не удалось получить задачи: ${error.message}`);
+    }
 }

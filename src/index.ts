@@ -25,6 +25,8 @@ bot.command('menu', (ctx) => commandHandlers.handleMenu(ctx));
 bot.command(['mode', 'db', 'choose'], (ctx) => commandHandlers.handleDatabaseSelection(ctx));
 bot.command('morning', (ctx) => commandHandlers.handleMorning(ctx));
 bot.command('morning_status', (ctx) => commandHandlers.handleMorningStatus(ctx));
+bot.command('day', (ctx) => commandHandlers.handleDay(ctx));
+bot.command('day_status', (ctx) => commandHandlers.handleDayStatus(ctx));
 
 // --- Регистрация обработчиков действий (callback queries) ---
 
@@ -45,6 +47,18 @@ bot.action(/^action:(create|list):(.+)$/, async (ctx) => {
 bot.action(/^morning_task:(.+)$/, async (ctx) => {
   const propName = ctx.match[1];
   await actionHandlers.handleMorningTask(ctx, propName);
+});
+
+// Обработка дневных чекбоксов
+bot.action(/^day_task:(.+)$/, async (ctx) => {
+  const propName = ctx.match[1];
+  await actionHandlers.handleDayTask(ctx, propName);
+});
+
+// Обработка выбора статуса дневной рутины
+bot.action(/^day_status:(.+)$/, async (ctx) => {
+  const status = ctx.match[1];
+  await actionHandlers.handleDayStatusSelection(ctx, status);
 });
 
 // --- Регистрация обработчиков сообщений ---

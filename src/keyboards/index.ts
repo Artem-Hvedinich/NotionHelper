@@ -1,6 +1,6 @@
 import { Markup } from 'telegraf';
 import { DATABASES, NotionDatabaseKey } from '../config/databases';
-import { getMorningRoutineTasksDynamic } from '../services/notion';
+import { getMorningRoutineTasksDynamic, getDayRoutineTasksDynamic, getDayRoutineStatuses } from '../services/notion';
 import { MorningTask } from '../types';
 
 /**
@@ -64,6 +64,39 @@ export class KeyboardService {
     });
     
     return Markup.inlineKeyboard(buttons, { columns: 1 });
+  }
+
+  /**
+   * Динамически генерирует клавиатуру дневной рутины на основе актуальных свойств базы.
+   */
+  async getDayRoutineKeyboard(status: Record<string, boolean> = {}) {
+    // Получаем список задач динамически из Notion (только чекбоксы)
+    const tasks = await getDayRoutineTasksDynamic();
+    
+    const buttons = tasks.map((task: MorningTask) => {
+      const isDone = status[task.propertyName] || false;
+      const icon = isDone ? '✅' : '⬜';
+      
+      return Markup.button.callback(
+        `${icon} ${task.label}`, 
+        `day_task:${task.propertyName}` 
+      );
+    });
+    
+    return Markup.inlineKeyboard(buttons, { columns: 1 });
+  }
+
+  /**
+   * Генерирует клавиатуру со статусами для дневной рутины.
+   */
+  async getDayRoutineStatusesKeyboard() {
+    const statuses = await getDayRoutineStatuses();
+    
+    const buttons = statuses.map((status: string) => 
+      Markup.button.callback(status, `day_status:${status}`)
+    );
+    
+    return Markup.inlineKeyboard(buttons, { columns: 2 });
   }
 }
 

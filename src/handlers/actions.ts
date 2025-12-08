@@ -1,6 +1,6 @@
 import { Context } from 'telegraf';
 import { getDatabaseByKey, NotionDatabaseKey } from '../config/databases';
-import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan } from '../services/notion';
+import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
 
@@ -27,9 +27,13 @@ export class ActionHandlers {
 
   await ctx.answerCbQuery(`Выбрана база: ${dbConfig.title}`);
   
-  // Для утренней рутины сразу показываем чеклист
-  if (dbKey === 'morningRoutine') {
+    // Для утренней рутины сразу показываем чеклист
+    if (dbKey === 'morningRoutine') {
       await this.showMorningRoutine(ctx, true);
+    } else if (dbKey === 'dayRoutine') {
+      // Для дневной рутины показываем статусы
+      const { commandHandlers } = await import('./commands');
+      await commandHandlers.handleDay(ctx);
     } else {
       // Для остальных баз показываем обычное меню действий
       const keyboard = keyboardService.getActionsKeyboard(dbKey);
@@ -96,6 +100,17 @@ export class ActionHandlers {
         // Для утренней рутины показываем кнопки
         try {
           await this.showMorningRoutine(ctx, false);
+          await ctx.answerCbQuery();
+        } catch (error: any) {
+          await ctx.answerCbQuery('Ошибка загрузки');
+          const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+          userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+        }
+      } else if (dbKey === 'dayRoutine') {
+        // Для дневной рутины показываем статусы
+        try {
+          const { commandHandlers } = await import('./commands');
+          await commandHandlers.handleDay(ctx);
           await ctx.answerCbQuery();
         } catch (error: any) {
           await ctx.answerCbQuery('Ошибка загрузки');
@@ -175,6 +190,88 @@ export class ActionHandlers {
   }
 
   /**
+   * Обработчик нажатия на чекбокс дневной рутины.
+   */
+  async handleDayTask(ctx: Context, propertyName: string): Promise<void> {
+    try {
+      // Отслеживаем исходное сообщение перед редактированием
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+      }
+      
+      const pageId = await ensureTodayDayRow();
+      const tasks = await getDayRoutineTasksDynamic();
+      const currentStatus = await getDayStatus(pageId, tasks);
+      const newValue = !currentStatus[propertyName];
+      
+      await updateDayTask(pageId, propertyName, newValue);
+      
+      // Обновляем клавиатуру и статистику
+      const newStatus = { ...currentStatus, [propertyName]: newValue };
+      const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
+      const keyboard = await keyboardService.getDayRoutineKeyboard(newStatus);
+      
+      let message = '🕒 *Дневная рутина*\n\n';
+      
+      // Динамически выводим все не-чекбокс поля
+      nonCheckboxProps.forEach(prop => {
+        message += `${prop.name}: *${prop.value}*\n`;
+      });
+      
+      if (nonCheckboxProps.length > 0) {
+        message += '\n';
+      }
+      
+      message += 'Что ты уже сделал сегодня?';
+      
+      const editedMsg = await ctx.editMessageText(message, { 
+        parse_mode: 'Markdown',
+        ...keyboard 
+      });
+      
+      // editMessageText возвращает обновленное сообщение, ID остается тем же
+      if (editedMsg && typeof editedMsg === 'object' && 'message_id' in editedMsg) {
+        const msgId = (editedMsg as any).message_id;
+        if (msgId) {
+          const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+          if (!currentMessages.includes(msgId)) {
+            userStateService.trackBotMessage(ctx.from!.id, msgId);
+          }
+        }
+      }
+      
+      const label = tasks.find(t => t.propertyName === propertyName)?.label || propertyName;
+      await ctx.answerCbQuery(newValue ? `✅ ${label} выполнено!` : `⬜ ${label} отменено`);
+      
+    } catch (error: any) {
+      console.error('Error updating day task:', error);
+      await ctx.answerCbQuery(`❌ Ошибка: ${error.message}`);
+    }
+  }
+
+  /**
+   * Обработчик выбора статуса дневной рутины.
+   * Показывает список задач с выбранным статусом.
+   */
+  async handleDayStatusSelection(ctx: Context, status: string): Promise<void> {
+    try {
+      await ctx.answerCbQuery('Загружаю задачи...');
+      const tasksList = await getDayRoutineTasksByStatus(status);
+      const sentMessage = await ctx.reply(tasksList, { parse_mode: 'Markdown' });
+      userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    } catch (error: any) {
+      console.error('Error fetching tasks by status:', error);
+      await ctx.answerCbQuery('Ошибка загрузки');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
    * Показывает чеклист утренней рутины.
    * Вспомогательный метод для переиспользования логики.
    */
@@ -218,6 +315,60 @@ export class ActionHandlers {
       if (msgId) {
           const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
         if (!currentMessages.includes(msgId)) {
+            userStateService.trackBotMessage(ctx.from!.id, msgId);
+          }
+        }
+      }
+    } else {
+      const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
+      userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
+    }
+  }
+
+  /**
+   * Показывает чеклист дневной рутины.
+   * Вспомогательный метод для переиспользования логики.
+   */
+  private async showDayRoutine(ctx: Context, isEdit: boolean): Promise<void> {
+    const pageId = await ensureTodayDayRow();
+    const tasks = await getDayRoutineTasksDynamic();
+    const status = await getDayStatus(pageId, tasks);
+    const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
+    const keyboard = await keyboardService.getDayRoutineKeyboard(status);
+    
+    let message = '🕒 *Дневная рутина*\n\n';
+    
+    // Динамически выводим все не-чекбокс поля
+    nonCheckboxProps.forEach(prop => {
+      message += `${prop.name}: *${prop.value}*\n`;
+    });
+    
+    if (nonCheckboxProps.length > 0) {
+      message += '\n';
+    }
+    
+    message += 'Что ты уже сделал сегодня?';
+    
+    // Если это callback query, редактируем сообщение, иначе отправляем новое
+    if (isEdit && 'callback_query' in ctx.update) {
+      // Отслеживаем исходное сообщение перед редактированием
+      if (ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+      }
+      
+      const editedMsg = await ctx.editMessageText(message, { 
+        parse_mode: 'Markdown',
+        ...keyboard 
+      });
+      if (editedMsg && typeof editedMsg === 'object' && 'message_id' in editedMsg) {
+        const msgId = (editedMsg as any).message_id;
+        if (msgId) {
+          const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+          if (!currentMessages.includes(msgId)) {
             userStateService.trackBotMessage(ctx.from!.id, msgId);
           }
         }
