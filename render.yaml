@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: telegram-notion-bot
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run serve
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: NOTION_API_KEY
+        sync: false
+      - key: NOTION_DB_MORNING_ROUTINE_ID
+        sync: false
+      - key: NOTION_DB_DAY_ROUTINE_ID
+        sync: false
+      - key: NOTION_DB_EVENING_ROUTINE_ID
+        sync: false
+      - key: NOTION_DB_HABITS_ID
+        sync: false
+      - key: NOTION_DB_DAILY_PLAN_ID
+        sync: false
+      - key: NOTION_DB_LATER_TASKS_ID
+        sync: false
+

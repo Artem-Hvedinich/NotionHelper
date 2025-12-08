@@ -1,0 +1,23 @@
+name: Ping Render to Keep Alive
+
+on:
+  schedule:
+    # Запускается каждые 10 минут
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Позволяет запускать вручную
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Render instance
+        run: |
+          if [ -z "${{ secrets.RENDER_URL }}" ]; then
+            echo "⚠️ RENDER_URL не установлен в secrets"
+            echo "Добавьте RENDER_URL в Settings → Secrets → Actions"
+            exit 1
+          fi
+          echo "Pinging ${{ secrets.RENDER_URL }}/health"
+          curl -f "${{ secrets.RENDER_URL }}/health" || exit 1
+          echo "✅ Ping successful"
+

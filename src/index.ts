@@ -202,6 +202,26 @@ bot.action(/^lcancel:(.+)$/, async (ctx) => {
 
 bot.on('text', (ctx) => messageHandlers.handleText(ctx));
 
+// --- HTTP сервер для поддержания инстанса активным ---
+
+import http from 'http';
+
+const PORT = process.env.PORT || 3000;
+
+const server = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/ping') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', bot: 'running' }));
+  } else {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Telegram Bot is running');
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`🌐 HTTP сервер запущен на порту ${PORT}`);
+});
+
 // --- Запуск ---
 
 bot.launch().then(() => {
@@ -209,5 +229,11 @@ bot.launch().then(() => {
 });
 
 // Enable graceful stop
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.once('SIGINT', () => {
+  bot.stop('SIGINT');
+  server.close();
+});
+process.once('SIGTERM', () => {
+  bot.stop('SIGTERM');
+  server.close();
+});
