@@ -32,21 +32,15 @@ export function createBlock(title: string, content: string, emoji?: string): str
  */
 export function formatProgressBar(current: number, total: number, length: number = 10): string {
   if (total === 0) return '○'.repeat(length);
-  
+
   const percentage = Math.round((current / total) * 100);
   const exactFilled = (current / total) * length;
   const filled = Math.floor(exactFilled);
-  const hasPartial = exactFilled - filled >= 0.5; // Если остаток >= 0.5, показываем полузакрашенный
-  const empty = length - filled - (hasPartial ? 1 : 0);
-  
-  // Используем символы: ● для заполненных, ◑ для частично заполненных, ○ для пустых
-  // ◑ меньше и лучше смотрится чем ◐
+  const empty = length - filled;
+
   let bar = '●'.repeat(filled);
-  if (hasPartial) {
-    bar += '◑'; // Полузакрашенный круг (меньше чем ◐)
-  }
   bar += '○'.repeat(empty);
-  
+
   return `${bar} ${percentage}%`;
 }
 
@@ -59,14 +53,14 @@ export function formatTaskList(
   showCompleted: boolean = true
 ): string {
   let result = '';
-  
+
   if (completedTasks.length > 0 && showCompleted) {
     result += `\n✅ *Выполнено* (${completedTasks.length}):\n`;
     completedTasks.forEach(task => {
       result += `✅ ${task.label}\n`;
     });
   }
-  
+
   if (pendingTasks.length > 0) {
     if (result) result += '\n';
     result += `*Осталось* (${pendingTasks.length}):\n`;
@@ -74,7 +68,7 @@ export function formatTaskList(
       result += `⬜ ${task.label}\n`;
     });
   }
-  
+
   return result;
 }
 
@@ -89,17 +83,17 @@ export function formatRoutineStats(
 ): string {
   const progressBar = formatProgressBar(completed, total);
   let stats = `📊 *Прогресс*: ${completed}/${total} ${progressBar}`;
-  
+
   if (score !== undefined && score !== null) {
     stats += `\n⭐ *Оценка*: ${score}`;
   }
-  
+
   if (additionalStats && additionalStats.length > 0) {
     additionalStats.forEach(stat => {
       stats += `\n${stat.name}: *${stat.value}*`;
     });
   }
-  
+
   return stats;
 }
 
@@ -113,17 +107,17 @@ export function formatTaskInfo(
 ): string {
   let message = `📌 *${title}*\n\n`;
   message += `📊 *Статус*: ${status}`;
-  
+
   if (additionalFields && additionalFields.length > 0) {
     message += '\n\n';
     additionalFields.forEach(field => {
-      const valueDisplay = field.value.length > 50 
-        ? field.value.substring(0, 47) + '...' 
+      const valueDisplay = field.value.length > 50
+        ? field.value.substring(0, 47) + '...'
         : field.value;
       message += `${field.name}: ${valueDisplay}\n`;
     });
   }
-  
+
   return message;
 }
 
@@ -136,11 +130,11 @@ export function formatTaskListByStatus(
   totalCount?: number
 ): string {
   let message = `📋 *${status}*`;
-  
+
   if (tasks.length === 0) {
     const statusLower = status.toLowerCase();
-    const isDoneStatus = statusLower.includes('готово') || statusLower.includes('done') || 
-                         statusLower.includes('завершено') || statusLower.includes('completed');
+    const isDoneStatus = statusLower.includes('готово') || statusLower.includes('done') ||
+      statusLower.includes('завершено') || statusLower.includes('completed');
     message += `\n\n📭 Задач не найдено${isDoneStatus ? ' (отредактированных сегодня)' : ''}`;
   } else {
     if (totalCount !== undefined) {
@@ -151,7 +145,7 @@ export function formatTaskListByStatus(
       message += `${index + 1}. ${task.title}\n`;
     });
   }
-  
+
   return message;
 }
 
