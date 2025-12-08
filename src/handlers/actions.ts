@@ -353,6 +353,7 @@ export class ActionHandlers {
    * Отправляет новое сообщение с задачей.
    */
   async handleDayTaskOpenAfterCreate(ctx: Context, shortId: string): Promise<void> {
+    let loadingMsg: any = null;
     try {
       // Получаем полный pageId по короткому ID
       const pageId = userStateService.getTaskPageId(shortId);
@@ -360,6 +361,10 @@ export class ActionHandlers {
         await ctx.reply('❌ Задача не найдена');
         return;
       }
+
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Загружаю задачу...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
 
       // Явно указываем базу данных, так как сразу после создания автоматическое определение может не сработать
       const dbKey: NotionDatabaseKey = 'dayRoutine';
@@ -389,13 +394,27 @@ export class ActionHandlers {
         }
       }
       
-      // Отправляем новое сообщение
+      // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
+      try {
+        await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+      } catch (error: any) {
+        // Игнорируем ошибки удаления
+      }
+      
       const sentMessage = await ctx.reply(message, {
         ...keyboard
       });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error opening task after create:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
@@ -687,6 +706,9 @@ export class ActionHandlers {
       }
       
       await ctx.answerCbQuery('✅ Задача удалена');
+      
+      // Возвращаемся к начальному меню (списку статусов)
+      await this.handleDayBackToStatuses(ctx);
     } catch (error: any) {
       console.error('Error deleting task:', error);
       await ctx.answerCbQuery('Ошибка удаления');
@@ -1143,12 +1165,17 @@ export class ActionHandlers {
    * Обработчик открытия задачи "Позже" после создания.
    */
   async handleLaterTaskOpenAfterCreate(ctx: Context, shortId: string): Promise<void> {
+    let loadingMsg: any = null;
     try {
       const pageId = userStateService.getTaskPageId(shortId);
       if (!pageId) {
         await ctx.reply('❌ Задача не найдена');
         return;
       }
+
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Загружаю задачу...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
 
       // Явно указываем базу данных, так как сразу после создания автоматическое определение может не сработать
       const dbKey: NotionDatabaseKey = 'laterTasks';
@@ -1176,12 +1203,29 @@ export class ActionHandlers {
         }
       }
       
+      // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
+      
       const sentMessage = await ctx.reply(message, {
         ...keyboard
       });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error opening later task after create:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
@@ -1390,13 +1434,18 @@ export class ActionHandlers {
         page_id: pageId,
         archived: true
       });
-      
+
+      // Удаляем регистрацию задачи
+      userStateService.unregisterTaskId(shortId);
+
       if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
         await ctx.deleteMessage();
-        userStateService.unregisterTaskId(shortId);
       }
       
       await ctx.answerCbQuery('✅ Задача удалена');
+      
+      // Возвращаемся к начальному меню (списку статусов)
+      await this.handleLaterBackToStatuses(ctx);
     } catch (error: any) {
       console.error('Error deleting later task:', error);
       await ctx.answerCbQuery('❌ Ошибка удаления');

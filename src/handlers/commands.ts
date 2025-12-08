@@ -109,7 +109,12 @@ export class CommandHandlers {
    * Показывает чеклист утренней рутины с текущей статистикой.
    */
   async handleMorning(ctx: Context): Promise<void> {
+    let loadingMsg: any = null;
     try {
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Загружаю утреннюю рутину...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+      
       const pageId = await ensureTodayMorningRow();
       const tasks = await getMorningRoutineTasksDynamic();
       const status = await getMorningStatus(pageId, tasks);
@@ -177,16 +182,38 @@ export class CommandHandlers {
    * Показывает список статусов для выбора.
    */
   async handleDay(ctx: Context): Promise<void> {
+    let loadingMsg: any = null;
     try {
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Загружаю статусы...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+      
       const statuses = await getDayRoutineStatuses();
       const keyboard = await keyboardService.getDayRoutineStatusesKeyboard();
       
       const message = '🕒 *Дневные задачи*\n\nВыбери статус:';
       
+      // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
+      
       const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error fetching day routine statuses:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
@@ -197,7 +224,12 @@ export class CommandHandlers {
    * Показывает текстовый статус дневной рутины.
    */
   async handleDayStatus(ctx: Context): Promise<void> {
+    let loadingMsg: any = null;
     try {
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Загружаю дневную рутину...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+      
       const pageId = await ensureTodayDayRow();
       const tasks = await getDayRoutineTasksDynamic();
       const status = await getDayStatus(pageId, tasks);
@@ -217,10 +249,27 @@ export class CommandHandlers {
         });
       }
       
+      // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
+      
       const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown' });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error fetching day status:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
@@ -231,17 +280,39 @@ export class CommandHandlers {
    * Показывает список статусов для выбора.
    */
   async handleLater(ctx: Context): Promise<void> {
+    let loadingMsg: any = null;
     try {
+      // Показываем индикатор загрузки
+      loadingMsg = await ctx.reply('⏳ Загружаю статусы...');
+      userStateService.trackBotMessage(ctx.from!.id, loadingMsg.message_id);
+      
       const { getLaterTasksStatuses } = await import('../services/notion');
       const statuses = await getLaterTasksStatuses();
       const keyboard = await keyboardService.getLaterTasksStatusesKeyboard();
       
       const message = '📝 *Позже*\n\nВыбери статус:';
       
+      // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
+      
       const sentMessage = await ctx.reply(message, { parse_mode: 'Markdown', ...keyboard });
       userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
     } catch (error: any) {
       console.error('Error fetching later tasks statuses:', error);
+      // Удаляем сообщение "Загружаю..." при ошибке
+      try {
+        if (loadingMsg) {
+          await ctx.telegram.deleteMessage(ctx.chat!.id, loadingMsg.message_id);
+        }
+      } catch (deleteError: any) {
+        // Игнорируем ошибки удаления
+      }
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
