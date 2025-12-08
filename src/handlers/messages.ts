@@ -43,7 +43,7 @@ export class MessageHandlers {
       return;
     }
   
-  // 1. Проверка явного режима взаимодействия (пользователь нажал "Создать задачу")
+  // Проверка явного режима взаимодействия (пользователь нажал "Создать задачу")
     const state = userStateService.getUserMode(userId);
 
   if (state.mode === 'create' && state.dbKey) {
@@ -51,17 +51,10 @@ export class MessageHandlers {
       return;
     }
 
-    // 2. Fallback: Проверка запомненного выбора (Пользователь просто ввел текст без нажатия "Создать")
-    const stickyKey = userStateService.getUserDatabase(userId);
-    if (state.mode === 'idle' && stickyKey) {
-      await this.handleQuickAdd(ctx, stickyKey, text);
-      return;
-    }
-
-    // 3. Нет режима и нет выбора
+    // Если нет режима создания, показываем сообщение о необходимости выбрать базу и нажать "Добавить"
     const sentMessage = await ctx.reply(
-      '⚠️ Я не знаю, куда это сохранить.\nСначала выбери базу командой /db',
-      keyboardService.getDatabaseKeyboard()
+      '⚠️ **Я не знаю, куда это сохранить.**\n\n**Сначала выбери базу и нажми кнопку "➕ Добавить"**',
+      { parse_mode: 'Markdown', ...keyboardService.getMainMenuKeyboard() }
     );
     userStateService.trackBotMessage(userId, sentMessage.message_id);
   }
