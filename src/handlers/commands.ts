@@ -2,7 +2,7 @@ import { Context } from 'telegraf';
 import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, getDayRoutineStatuses, getDayRoutineTasksByStatus } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
-import { createHeader, formatRoutineStats, formatTaskList, formatMainMenu, formatDatabaseSelection } from '../utils/formatter';
+import { createHeader, formatRoutineStats, formatTaskList, formatMainMenu, formatDatabaseSelection, formatDayStatusSelection, formatLaterStatusSelection } from '../utils/formatter';
 
 /**
  * Обработчики команд бота.
@@ -242,7 +242,7 @@ export class CommandHandlers {
       const statuses = await getDayRoutineStatuses();
       const keyboard = await keyboardService.getDayRoutineStatusesKeyboard();
       
-      const message = '🕒 *Дневные задачи*\n\nВыбери статус:';
+      const message = formatDayStatusSelection();
       
       // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
       try {
@@ -341,7 +341,7 @@ export class CommandHandlers {
       const statuses = await getLaterTasksStatuses();
       const keyboard = await keyboardService.getLaterTasksStatusesKeyboard();
       
-      const message = '📝 *Позже*\n\nВыбери статус:';
+      const message = formatLaterStatusSelection();
       
       // Удаляем сообщение "Загружаю..." и отправляем новое сообщение
       try {

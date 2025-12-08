@@ -161,6 +161,15 @@ export function formatMainMenu(): string {
 }
 
 /**
+ * Форматирует сообщение выбора статуса для дневных задач.
+ */
+export function formatDayStatusSelection(): string {
+  return `🕒 *Дневные задачи*
+
+*Выбери статус:*`;
+}
+
+/**
  * Форматирует сообщение о выборе базы данных.
  */
 export function formatDatabaseSelection(dbTitle: string): string {
