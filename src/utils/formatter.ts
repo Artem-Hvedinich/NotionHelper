@@ -6,14 +6,14 @@
 /**
  * Создает горизонтальный разделитель заданной длины.
  */
-export function createSeparator(length: number = 25, char: string = '─'): string {
+export function createSeparator(length: number = 20, char: string = '─'): string {
   return char.repeat(length);
 }
 
 /**
  * Создает заголовок с разделителями.
  */
-export function createHeader(title: string, emoji?: string, length: number = 25): string {
+export function createHeader(title: string, emoji?: string, length: number = 20): string {
   const separator = createSeparator(length);
   const prefix = emoji ? `${emoji} ` : '';
   return `${prefix}*${title}*\n${separator}`;
@@ -39,10 +39,11 @@ export function formatProgressBar(current: number, total: number, length: number
   const hasPartial = exactFilled - filled >= 0.5; // Если остаток >= 0.5, показываем полузакрашенный
   const empty = length - filled - (hasPartial ? 1 : 0);
   
-  // Используем символы: ● для заполненных, ◐ для частично заполненных, ○ для пустых
+  // Используем символы: ● для заполненных, ◑ для частично заполненных, ○ для пустых
+  // ◑ меньше и лучше смотрится чем ◐
   let bar = '●'.repeat(filled);
   if (hasPartial) {
-    bar += '◐'; // Полузакрашенный круг
+    bar += '◑'; // Полузакрашенный круг (меньше чем ◐)
   }
   bar += '○'.repeat(empty);
   
@@ -68,7 +69,7 @@ export function formatTaskList(
   
   if (pendingTasks.length > 0) {
     if (result) result += '\n';
-    result += `⬜ *Осталось* (${pendingTasks.length}):\n`;
+    result += `*Осталось* (${pendingTasks.length}):\n`;
     pendingTasks.forEach(task => {
       result += `⬜ ${task.label}\n`;
     });

@@ -192,18 +192,32 @@ export class ActionHandlers {
       const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
       const keyboard = await keyboardService.getMorningRoutineKeyboard(newStatus);
       
-      let message = '🌅 *Утренняя рутина*\n\n';
+      // Подсчитываем выполненные и оставшиеся задачи
+      const completedTasks = tasks.filter(task => newStatus[task.propertyName]);
+      const pendingTasks = tasks.filter(task => !newStatus[task.propertyName]);
       
-      // Динамически выводим все не-чекбокс поля
-      nonCheckboxProps.forEach(prop => {
-        message += `${prop.name}: *${prop.value}*\n`;
-      });
+      // Формируем сообщение с улучшенным форматированием
+      const { createHeader, formatRoutineStats, formatTaskList } = await import('../utils/formatter');
+      let message = createHeader('Утренняя рутина', '🌅', 20);
+      message += '\n';
       
-      if (nonCheckboxProps.length > 0) {
-        message += '\n';
-      }
+      // Статистика
+      const score = nonCheckboxProps.find(p => p.name.toLowerCase().includes('оценка') || p.name.toLowerCase().includes('score'));
+      const additionalStats = nonCheckboxProps
+        .filter(p => !p.name.toLowerCase().includes('оценка') && !p.name.toLowerCase().includes('score'))
+        .map(p => ({ name: p.name, value: p.value }));
       
-      message += 'Что ты уже сделал сегодня?';
+      message += formatRoutineStats(
+        completedTasks.length,
+        tasks.length,
+        score?.value,
+        additionalStats
+      );
+      
+      // Список задач
+      message += formatTaskList(completedTasks, pendingTasks, true);
+      
+      message += '\n*Что ты уже сделал сегодня?*';
       
       const editedMsg = await ctx.editMessageText(message, { 
         parse_mode: 'Markdown',
