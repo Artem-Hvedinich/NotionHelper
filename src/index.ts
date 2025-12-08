@@ -80,6 +80,13 @@ bot.action(/^dd:(.+)$/, async (ctx) => {
   await actionHandlers.handleDayTaskDelete(ctx, shortId);
 });
 
+// Обработка переключения чекбокса задачи дневной рутины (dc = day checkbox)
+bot.action(/^dc:(.+):(.+)$/, async (ctx) => {
+  const shortId = ctx.match[1];
+  const propertyName = ctx.match[2];
+  await actionHandlers.handleDayTaskCheckboxToggle(ctx, shortId, propertyName);
+});
+
 // --- Регистрация обработчиков сообщений ---
 
 bot.on('text', (ctx) => messageHandlers.handleText(ctx));

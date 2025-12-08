@@ -1,6 +1,6 @@
 import { Context } from 'telegraf';
-import { getDatabaseByKey, NotionDatabaseKey } from '../config/databases';
-import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus, updateDayRoutineTaskStatus, getDayRoutineTaskInfo, getDayRoutineStatuses } from '../services/notion';
+import { getDatabaseByKey, NotionDatabaseKey, DATABASES } from '../config/databases';
+import { ensureTodayMorningRow, getMorningStatus, getMorningRoutineTasksDynamic, getPageNonCheckboxProperties, updateMorningTask, listTodayDailyPlan, ensureTodayDayRow, getDayStatus, getDayRoutineTasksDynamic, updateDayTask, getDayRoutineTasksByStatus, updateDayRoutineTaskStatus, getDayRoutineTaskInfo, getDayRoutineStatuses, getDayRoutineTaskCheckboxes, updateDayRoutineTaskCheckbox, getDatabaseCheckboxProperties } from '../services/notion';
 import { userStateService } from '../services/userState';
 import { keyboardService } from '../keyboards';
 
@@ -27,8 +27,8 @@ export class ActionHandlers {
 
   await ctx.answerCbQuery(`Выбрана база: ${dbConfig.title}`);
   
-    // Для утренней рутины сразу показываем чеклист
-    if (dbKey === 'morningRoutine') {
+  // Для утренней рутины сразу показываем чеклист
+  if (dbKey === 'morningRoutine') {
       await this.showMorningRoutine(ctx, true);
     } else if (dbKey === 'dayRoutine') {
       // Для дневной рутины показываем статусы
@@ -212,22 +212,22 @@ export class ActionHandlers {
       
       // Обновляем клавиатуру и статистику
       const newStatus = { ...currentStatus, [propertyName]: newValue };
-      const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
+        const nonCheckboxProps = await getPageNonCheckboxProperties(pageId);
       const keyboard = await keyboardService.getDayRoutineKeyboard(newStatus);
-      
+        
       let message = '🕒 *Дневная рутина*\n\n';
-      
-      // Динамически выводим все не-чекбокс поля
-      nonCheckboxProps.forEach(prop => {
-        message += `${prop.name}: *${prop.value}*\n`;
-      });
-      
-      if (nonCheckboxProps.length > 0) {
-        message += '\n';
-      }
-      
-      message += 'Что ты уже сделал сегодня?';
-      
+        
+        // Динамически выводим все не-чекбокс поля
+        nonCheckboxProps.forEach(prop => {
+          message += `${prop.name}: *${prop.value}*\n`;
+        });
+        
+        if (nonCheckboxProps.length > 0) {
+          message += '\n';
+        }
+        
+        message += 'Что ты уже сделал сегодня?';
+        
       const editedMsg = await ctx.editMessageText(message, { 
         parse_mode: 'Markdown',
         ...keyboard 
@@ -277,7 +277,9 @@ export class ActionHandlers {
 
       // Отправляем каждую задачу отдельным сообщением с кнопками
       for (const task of tasks) {
-        const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task);
+        // Получаем чекбоксы для задачи
+        const checkboxes = await getDayRoutineTaskCheckboxes(task.pageId);
+        const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
         const taskMessage = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
         const sentMessage = await ctx.reply(taskMessage, { 
           parse_mode: 'Markdown',
@@ -285,10 +287,10 @@ export class ActionHandlers {
         });
         userStateService.trackBotMessage(ctx.from!.id, sentMessage.message_id);
       }
-    } catch (error: any) {
+      } catch (error: any) {
       console.error('Error fetching tasks by status:', error);
-      await ctx.answerCbQuery('Ошибка загрузки');
-      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+        await ctx.answerCbQuery('Ошибка загрузки');
+        const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }
   }
@@ -314,7 +316,8 @@ export class ActionHandlers {
       
       // Получаем обновленную информацию о задаче
       const task = await getDayRoutineTaskInfo(pageId);
-      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task);
+      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
       
       const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
       
@@ -355,7 +358,8 @@ export class ActionHandlers {
 
       await ctx.answerCbQuery('Обновляю...');
       const task = await getDayRoutineTaskInfo(pageId);
-      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task);
+      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, checkboxes);
       
       const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
       
@@ -379,10 +383,10 @@ export class ActionHandlers {
       await ctx.answerCbQuery('Ошибка обновления');
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
-    }
   }
+}
 
-  /**
+/**
    * Обработчик удаления задачи дневной рутины.
    */
   async handleDayTaskDelete(ctx: Context, shortId: string): Promise<void> {
@@ -417,6 +421,66 @@ export class ActionHandlers {
     } catch (error: any) {
       console.error('Error deleting task:', error);
       await ctx.answerCbQuery('Ошибка удаления');
+      const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
+      userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
+    }
+  }
+
+  /**
+   * Обработчик переключения чекбокса задачи дневной рутины.
+   */
+  async handleDayTaskCheckboxToggle(ctx: Context, shortId: string, propertyNameShort: string): Promise<void> {
+    try {
+      // Получаем полный pageId по короткому ID
+      const pageId = userStateService.getTaskPageId(shortId);
+      if (!pageId) {
+        await ctx.answerCbQuery('❌ Задача не найдена');
+        return;
+      }
+
+      // Получаем полное название свойства из базы данных
+      const dbConfig = DATABASES.dayRoutine;
+      const checkboxProperties = await getDatabaseCheckboxProperties(dbConfig.id);
+      const checkbox = checkboxProperties.find((cb: { propertyName: string; label: string }) => cb.propertyName.startsWith(propertyNameShort));
+      
+      if (!checkbox) {
+        await ctx.answerCbQuery('❌ Чекбокс не найден');
+        return;
+      }
+
+      // Получаем текущее значение чекбокса
+      const checkboxes = await getDayRoutineTaskCheckboxes(pageId);
+      const currentCheckbox = checkboxes.find(cb => cb.propertyName === checkbox.propertyName);
+      const newValue = currentCheckbox ? !currentCheckbox.checked : true;
+
+      await ctx.answerCbQuery('Обновляю...');
+      await updateDayRoutineTaskCheckbox(pageId, checkbox.propertyName, newValue);
+      
+      // Получаем обновленную информацию о задаче
+      const task = await getDayRoutineTaskInfo(pageId);
+      const updatedCheckboxes = await getDayRoutineTaskCheckboxes(pageId);
+      const keyboard = await keyboardService.getDayRoutineTaskKeyboard(task, updatedCheckboxes);
+      
+      const message = `📌 *${task.title}*\n\nСтатус: ${task.status}`;
+      
+      // Обновляем сообщение
+      if ('callback_query' in ctx.update && ctx.update.callback_query.message) {
+        const originalMsgId = ctx.update.callback_query.message.message_id;
+        const currentMessages = userStateService.getUserBotMessages(ctx.from!.id);
+        if (!currentMessages.includes(originalMsgId)) {
+          userStateService.trackBotMessage(ctx.from!.id, originalMsgId);
+        }
+        
+        await ctx.editMessageText(message, {
+          parse_mode: 'Markdown',
+          ...keyboard
+        });
+      }
+      
+      await ctx.answerCbQuery(newValue ? `✅ ${checkbox.label} отмечено` : `⬜ ${checkbox.label} снято`);
+    } catch (error: any) {
+      console.error('Error toggling checkbox:', error);
+      await ctx.answerCbQuery('Ошибка обновления');
       const errorMsg = await ctx.reply(`❌ Ошибка: ${error.message}`);
       userStateService.trackBotMessage(ctx.from!.id, errorMsg.message_id);
     }

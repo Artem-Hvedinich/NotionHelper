@@ -103,13 +103,31 @@ export class KeyboardService {
   /**
    * Генерирует клавиатуру для управления задачей дневной рутины.
    */
-  async getDayRoutineTaskKeyboard(task: DayRoutineTask) {
+  async getDayRoutineTaskKeyboard(task: DayRoutineTask, checkboxes?: Array<{ propertyName: string; label: string; checked: boolean }>) {
     const statuses = await getDayRoutineStatuses();
     
     // Используем короткий ID вместо полного pageId для callback_data
     const shortId = userStateService.registerTaskId(task.pageId);
     
-    // Кнопки для изменения статуса (только другие статусы)
+    const buttons: any[] = [];
+    
+    // Добавляем чекбоксы над кнопками управления (если есть)
+    if (checkboxes && checkboxes.length > 0) {
+      const checkboxButtons = checkboxes.map(checkbox => {
+        const icon = checkbox.checked ? '✅' : '⬜';
+        // Обрезаем название чекбокса для callback_data (максимум 30 символов)
+        const propNameShort = checkbox.propertyName.length > 30 ? checkbox.propertyName.substring(0, 30) : checkbox.propertyName;
+        return Markup.button.callback(
+          `${icon} ${checkbox.label}`,
+          `dc:${shortId}:${propNameShort}`
+        );
+      });
+      
+      // Добавляем чекбоксы по одному в ряд
+      checkboxButtons.forEach(btn => buttons.push([btn]));
+    }
+    
+    // Кнопки для изменения статуса (только другие статусы, не текущий)
     // Ограничиваем длину статуса в callback_data (максимум 20 символов)
     const statusButtons = statuses
       .filter(status => status !== task.status)
@@ -118,15 +136,6 @@ export class KeyboardService {
         const statusShort = status.length > 20 ? status.substring(0, 20) : status;
         return Markup.button.callback(`🔄 ${status}`, `ds:${shortId}:${statusShort}`);
       });
-    
-    // Кнопка для обновления задачи
-    const refreshButton = Markup.button.callback('🔄 Обновить', `dr:${shortId}`);
-    
-    // Кнопка для удаления задачи
-    const deleteButton = Markup.button.callback('🗑️ Удалить', `dd:${shortId}`);
-    
-    // Группируем кнопки: сначала статусы (по 2 в ряд), потом действия
-    const buttons: any[] = [];
     
     // Добавляем кнопки статусов по 2 в ряд
     for (let i = 0; i < statusButtons.length; i += 2) {
@@ -137,8 +146,14 @@ export class KeyboardService {
       }
     }
     
+    // Кнопка для обновления задачи
+    const refreshButton = Markup.button.callback('🔄 Обновить', `dr:${shortId}`);
+    
+    // Кнопка для удаления задачи
+    const deleteButton = Markup.button.callback('🗑️ Удалить', `dd:${shortId}`);
+    
     // Добавляем кнопки действий
-    if (statusButtons.length > 0) {
+    if (statusButtons.length > 0 || (checkboxes && checkboxes.length > 0)) {
       buttons.push([refreshButton, deleteButton]);
     } else {
       buttons.push([refreshButton]);

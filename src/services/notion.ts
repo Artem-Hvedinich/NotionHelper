@@ -911,6 +911,64 @@ export async function updateDayRoutineTaskStatus(pageId: string, newStatus: stri
 }
 
 /**
+ * Получает чекбоксы задачи дневной рутины.
+ */
+export async function getDayRoutineTaskCheckboxes(pageId: string): Promise<Array<{ propertyName: string; label: string; checked: boolean }>> {
+    const dbConfig = DATABASES.dayRoutine;
+    if (!dbConfig.id) {
+        throw new Error('ID базы dayRoutine не настроен');
+    }
+
+    try {
+        // Получаем список чекбоксов из схемы базы данных
+        const checkboxProperties = await getDatabaseCheckboxProperties(dbConfig.id);
+        
+        if (checkboxProperties.length === 0) {
+            return [];
+        }
+
+        // Получаем текущие значения чекбоксов из страницы
+        const page = await notion.pages.retrieve({ page_id: pageId });
+        if (!('properties' in page)) {
+            return [];
+        }
+
+        return checkboxProperties.map(prop => {
+            const pageProp = page.properties[prop.propertyName];
+            // @ts-ignore
+            const checked = pageProp?.checkbox || false;
+            return {
+                propertyName: prop.propertyName,
+                label: prop.label,
+                checked: checked
+            };
+        });
+    } catch (error: any) {
+        console.error('Error fetching task checkboxes:', error);
+        return [];
+    }
+}
+
+/**
+ * Обновляет чекбокс задачи дневной рутины.
+ */
+export async function updateDayRoutineTaskCheckbox(pageId: string, propertyName: string, value: boolean): Promise<void> {
+    try {
+        await notion.pages.update({
+            page_id: pageId,
+            properties: {
+                [propertyName]: {
+                    checkbox: value
+                }
+            }
+        });
+    } catch (error: any) {
+        console.error('Error updating task checkbox:', error);
+        throw new Error(`Не удалось обновить чекбокс: ${error.message}`);
+    }
+}
+
+/**
  * Получает полную информацию о задаче дневной рутины по ID страницы.
  */
 export async function getDayRoutineTaskInfo(pageId: string): Promise<DayRoutineTask> {
