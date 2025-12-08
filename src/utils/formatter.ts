@@ -164,9 +164,14 @@ export function formatMainMenu(): string {
  * Форматирует сообщение выбора статуса для дневных задач.
  */
 export function formatDayStatusSelection(): string {
-  return `🕒 *Дневные задачи*
+  return createHeader('Дневные задачи', '🕒', 20) + '\n\n*Выбери статус:*';
+}
 
-*Выбери статус:*`;
+/**
+ * Форматирует сообщение выбора статуса для "Позже".
+ */
+export function formatLaterStatusSelection(): string {
+  return createHeader('Позже', '📝', 20) + '\n\n*Выбери статус:*';
 }
 
 /**
