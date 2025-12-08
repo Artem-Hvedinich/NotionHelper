@@ -98,18 +98,12 @@ export class CommandHandlers {
     const userId = ctx.from!.id;
     const chatId = ctx.chat!.id;
     
-    // Пытаемся удалить команду /start от пользователя
-    // В личных чатах это может не работать из-за ограничений Telegram API
-    try {
-      if (ctx.message && 'message_id' in ctx.message) {
-        await ctx.deleteMessage();
-      }
-    } catch (error: any) {
-      // Игнорируем ошибки - в личных чатах бот не может удалять сообщения пользователя
-      // Это нормальное поведение Telegram API
+    // Отслеживаем команду /start от пользователя для последующего удаления
+    if (ctx.message && 'message_id' in ctx.message) {
+      userStateService.trackUserMessage(userId, ctx.message.message_id);
     }
     
-    // Удаляем все предыдущие сообщения бота
+    // Удаляем все предыдущие сообщения бота и пользователя
     await this.clearBotMessages(ctx);
     
     // Отправляем новое сообщение с главным меню
