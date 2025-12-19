@@ -1,23 +1,27 @@
 {
-  "name": "telegramfornotion",
+  "name": "notion-tasks-bot",
   "version": "1.0.0",
   "main": "dist/index.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "dev": "ts-node src/index.ts",
     "build": "tsc",
-    "serve": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "start": "node dist/index.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
-  "keywords": [],
+  "keywords": [
+    "telegram",
+    "notion",
+    "tasks",
+    "bot"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@notionhq/client": "^2.2.15",
     "dotenv": "^16.4.7",
-    "telegraf": "^4.16.3"
+    "grammy": "^1.38.4"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
