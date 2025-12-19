@@ -1,15 +1,14 @@
 import { Bot, Context, session, SessionFlavor } from 'grammy';
 import { tasksRepo } from '../notion/repository';
 import { escapeHtml } from '../utils/format';
-import { mainMenuKeyboard, backKeyboard, taskKeyboard, cancelKeyboard, confirmAddKeyboard, settingsKeyboard, statusSelectionKeyboard } from './keyboards';
+import { mainMenuKeyboard, backKeyboard, taskKeyboard, settingsKeyboard, statusSelectionKeyboard } from './keyboards';
 import { registerUser, getUserSettings, setReminderMinutes, toggleReminders } from './reminders';
+import { env } from '../config/env';
 
 // Session data
 interface SessionData {
-  waitingForTaskText?: boolean;
   messageIds?: number[]; // Track messages to delete
   inboxPage?: number;
-  pendingTaskText?: string; // Text waiting for confirmation
 }
 
 type MyContext = Context & SessionFlavor<SessionData>;
@@ -27,10 +26,18 @@ export function setupBot(bot: Bot<MyContext>) {
   // Helper: delete tracked messages
   async function clearMessages(ctx: MyContext) {
     const ids = ctx.session.messageIds || [];
+    const chatId = ctx.chat?.id;
+    if (!chatId) return;
+    
     for (const id of ids) {
       try {
-        await ctx.api.deleteMessage(ctx.chat!.id, id);
-      } catch {}
+        await ctx.api.deleteMessage(chatId, id);
+      } catch (error: any) {
+        // Ignore "message not found" errors
+        if (error?.description?.includes('message to delete not found')) {
+          // Message already deleted, continue
+        }
+      }
     }
     ctx.session.messageIds = [];
   }
@@ -93,7 +100,6 @@ export function setupBot(bot: Bot<MyContext>) {
 
   // /start
   bot.command('start', async (ctx) => {
-    ctx.session.waitingForTaskText = false;
     ctx.session.messageIds = [];
     ctx.session.inboxPage = 0;
     
@@ -102,10 +108,14 @@ export function setupBot(bot: Bot<MyContext>) {
       registerUser(ctx.chat.id);
     }
     
-    await ctx.reply(
-      `Привет\n\nЯ помогу управлять задачами.`,
+    // Get user name
+    const firstName = ctx.from?.first_name || 'друг';
+    
+    const msg = await ctx.reply(
+      `Привет, ${firstName}\n\nПросто добавь задачу текстом или голосом.`,
       { reply_markup: mainMenuKeyboard() }
     );
+    trackMessage(ctx, msg.message_id);
   });
 
   // /help
@@ -132,7 +142,6 @@ export function setupBot(bot: Bot<MyContext>) {
 
   // Menu - clear messages and show menu
   bot.callbackQuery('menu', async (ctx) => {
-    ctx.session.waitingForTaskText = false;
     ctx.session.inboxPage = 0;
     await ctx.answerCallbackQuery();
     
@@ -150,19 +159,9 @@ export function setupBot(bot: Bot<MyContext>) {
     );
   });
 
-  // Add task - start
-  bot.callbackQuery('add_task', async (ctx) => {
-    ctx.session.waitingForTaskText = true;
-    await ctx.answerCallbackQuery();
-    await ctx.editMessageText(
-      `Напиши задачу:`,
-      { reply_markup: cancelKeyboard() }
-    );
-  });
 
   // Inbox
   bot.callbackQuery('inbox', async (ctx) => {
-    ctx.session.waitingForTaskText = false;
     ctx.session.messageIds = [];
     ctx.session.inboxPage = 0;
     await ctx.answerCallbackQuery();
@@ -207,7 +206,6 @@ export function setupBot(bot: Bot<MyContext>) {
 
   // Today
   bot.callbackQuery('today', async (ctx) => {
-    ctx.session.waitingForTaskText = false;
     ctx.session.messageIds = [];
     await ctx.answerCallbackQuery();
     
@@ -272,43 +270,6 @@ export function setupBot(bot: Bot<MyContext>) {
     }
   });
 
-  // Confirm add task from random text
-  bot.callbackQuery('confirm_add', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    
-    const text = ctx.session.pendingTaskText;
-    if (!text) {
-      await ctx.editMessageText('Ошибка. Попробуй ещё раз.');
-      return;
-    }
-    
-    const task = await tasksRepo.create({ name: text });
-    ctx.session.pendingTaskText = undefined;
-    
-    if (task) {
-      // Get active statuses for selection (excluding inbox, done, archive)
-      const activeStatuses = await tasksRepo.getActiveStatuses();
-      
-      if (activeStatuses.length > 0) {
-        await ctx.editMessageText(
-          `Задача добавлена.\n\nВыбери статус:`,
-          { reply_markup: statusSelectionKeyboard(task.id, activeStatuses) }
-        );
-      } else {
-        // No active statuses, show regular keyboard
-        await ctx.editMessageText(
-          `Задача добавлена.`,
-          { reply_markup: taskKeyboard(task.id, { showMenu: true }) }
-        );
-      }
-    } else {
-      await ctx.editMessageText(
-        `Ошибка. Попробуй ещё раз.`,
-        { reply_markup: mainMenuKeyboard() }
-      );
-    }
-  });
-
   // Set status for newly created task
   bot.callbackQuery(/^set_status:(.+):(.+)$/, async (ctx) => {
     const taskId = ctx.match[1];
@@ -318,10 +279,15 @@ export function setupBot(bot: Bot<MyContext>) {
     
     if (ok) {
       await ctx.answerCallbackQuery('Готово');
-      await ctx.editMessageText(
+      
+      // Clear all previous messages when task goes to work
+      await clearMessages(ctx);
+      
+      const msg = await ctx.reply(
         `Задача добавлена.\nСтатус: ${escapeHtml(statusName)}`,
         { parse_mode: 'HTML', reply_markup: taskKeyboard(taskId, { showMenu: true }) }
       );
+      trackMessage(ctx, msg.message_id);
     } else {
       await ctx.answerCallbackQuery('Ошибка');
       await ctx.editMessageText(
@@ -331,12 +297,6 @@ export function setupBot(bot: Bot<MyContext>) {
     }
   });
 
-  // Cancel add task from random text
-  bot.callbackQuery('cancel_add', async (ctx) => {
-    await ctx.answerCallbackQuery();
-    ctx.session.pendingTaskText = undefined;
-    await ctx.deleteMessage();
-  });
 
   // Settings
   bot.callbackQuery('settings', async (ctx) => {
@@ -378,54 +338,108 @@ export function setupBot(bot: Bot<MyContext>) {
     });
   });
 
+  // --- Voice messages ---
+  bot.on('message:voice', async (ctx) => {
+    const voice = ctx.message.voice;
+    
+    // Try to get transcription if available
+    let text = '';
+    
+    // Check if transcription exists in the message (Telegram Premium or bot-requested)
+    const message = ctx.message as any;
+    if (message.voice_transcription?.text) {
+      text = message.voice_transcription.text;
+    }
+    
+    // If no transcription, create task with placeholder
+    if (!text) {
+      text = '[Голосовое сообщение]';
+    }
+    
+    // Clear all previous bot messages before creating new task
+    await clearMessages(ctx);
+    
+    // Create task in inbox (automatically goes to inbox status)
+    // User message stays
+    const task = await tasksRepo.create({ name: text });
+    
+    if (task) {
+      // Get file URL from Telegram and add to Notion
+      if (voice?.file_id) {
+        try {
+          // Get file info from Telegram
+          const file = await ctx.api.getFile(voice.file_id);
+          // Construct direct download URL
+          const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+          
+          // Add voice file to Notion task
+          await tasksRepo.addFileToTask(task.id, fileUrl, 'voice.ogg');
+        } catch (error) {
+          console.error('Error adding voice file to Notion:', error);
+        }
+      }
+      
+      const msg = await ctx.reply(
+        `Задача добавлена в Входящие.`,
+        { reply_markup: taskKeyboard(task.id, { showMenu: true, hideSetDoing: true }) }
+      );
+      trackMessage(ctx, msg.message_id);
+    } else {
+      await ctx.reply(
+        `Ошибка. Попробуй ещё раз.`,
+        { reply_markup: mainMenuKeyboard() }
+      );
+    }
+  });
+
   // --- Text messages ---
   bot.on('message:text', async (ctx) => {
     const text = ctx.message.text;
     
-    // If waiting for task text (from add button)
-    if (ctx.session.waitingForTaskText) {
-      // Delete user message
-      try {
-        await ctx.deleteMessage();
-      } catch {}
-      
-      const task = await tasksRepo.create({ name: text });
-      
-      ctx.session.waitingForTaskText = false;
-      
-      if (task) {
-        // Get active statuses for selection (excluding inbox, done, archive)
-        const activeStatuses = await tasksRepo.getActiveStatuses();
-        
-        if (activeStatuses.length > 0) {
-          const msg = await ctx.reply(
-            `Задача добавлена.\n\nВыбери статус:`,
-            { reply_markup: statusSelectionKeyboard(task.id, activeStatuses) }
-          );
-          trackMessage(ctx, msg.message_id);
-        } else {
-          // No active statuses, show regular keyboard
-          const msg = await ctx.reply(
-            `Задача добавлена.`,
-            { reply_markup: taskKeyboard(task.id, { showMenu: true }) }
-          );
-          trackMessage(ctx, msg.message_id);
-        }
-      } else {
-        await ctx.reply(
-          `Ошибка. Попробуй ещё раз.`,
-          { reply_markup: mainMenuKeyboard() }
-        );
-      }
+    // Skip commands
+    if (text.startsWith('/')) {
       return;
     }
     
-    // Random text - ask to add as task
-    ctx.session.pendingTaskText = text;
-    await ctx.reply(
-      `Добавить в задачи?\n\n«${escapeHtml(text)}»`,
-      { reply_markup: confirmAddKeyboard() }
-    );
+    // Clear all previous bot messages before creating new task
+    await clearMessages(ctx);
+    
+    // Also try to delete the message user is replying to (if any)
+    // This handles the case when user creates new task while status selection message is still visible
+    try {
+      if (ctx.message?.reply_to_message) {
+        await ctx.api.deleteMessage(ctx.chat!.id, ctx.message.reply_to_message.message_id);
+      }
+    } catch {}
+    
+    // Create task immediately (user message stays)
+    const task = await tasksRepo.create({ name: text });
+    
+    if (task) {
+      // Get active statuses for selection (excluding inbox, done, archive)
+      const activeStatuses = await tasksRepo.getActiveStatuses();
+      
+      if (activeStatuses.length > 0) {
+        const msg = await ctx.reply(
+          `Задача добавлена.\n\nВыбери статус:`,
+          { reply_markup: statusSelectionKeyboard(task.id, activeStatuses) }
+        );
+        trackMessage(ctx, msg.message_id);
+      } else {
+        // No active statuses, show regular keyboard
+        const msg = await ctx.reply(
+          `Задача добавлена.`,
+          { reply_markup: taskKeyboard(task.id, { showMenu: true }) }
+        );
+        trackMessage(ctx, msg.message_id);
+      }
+    } else {
+      const msg = await ctx.reply(
+        `Ошибка. Попробуй ещё раз.`,
+        { reply_markup: mainMenuKeyboard() }
+      );
+      trackMessage(ctx, msg.message_id);
+    }
   });
 
   // Error handler

@@ -6,8 +6,6 @@ import { Task } from '../notion/types';
  */
 export function mainMenuKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text('Добавить', 'add_task')
-    .row()
     .text('Входящие', 'inbox')
     .text('Сегодня', 'today');
 }
@@ -103,11 +101,13 @@ export function paginationKeyboard(
  */
 export function taskKeyboard(
   taskId: string,
-  options?: { showMenu?: boolean; pagination?: { prefix: string; page: number; total: number } }
+  options?: { showMenu?: boolean; pagination?: { prefix: string; page: number; total: number }; hideSetDoing?: boolean }
 ): InlineKeyboard {
   const kb = new InlineKeyboard();
 
-  kb.text('В работу', `set_today:${taskId}`);
+  if (!options?.hideSetDoing) {
+    kb.text('В работу', `set_today:${taskId}`);
+  }
 
   kb.url('Открыть', `https://notion.so/${taskId.replace(/-/g, '')}`);
 

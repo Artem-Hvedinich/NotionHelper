@@ -254,6 +254,33 @@ export class TasksRepository {
   }
 
   /**
+   * Add file/audio to a task page
+   */
+  async addFileToTask(taskId: string, fileUrl: string, fileName?: string): Promise<boolean> {
+    try {
+      await notion.blocks.children.append({
+        block_id: taskId,
+        children: [
+          {
+            object: 'block',
+            type: 'audio',
+            audio: {
+              type: 'external',
+              external: {
+                url: fileUrl,
+              },
+            },
+          },
+        ],
+      });
+      return true;
+    } catch (error) {
+      console.error('Add file to task error:', error);
+      return false;
+    }
+  }
+
+  /**
    * Get task by ID
    */
   async getById(id: string): Promise<Task | null> {
